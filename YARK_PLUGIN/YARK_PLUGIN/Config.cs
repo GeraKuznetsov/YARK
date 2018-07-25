@@ -6,7 +6,7 @@ using UnityEngine;
 namespace KSP_YARK
 {
     [KSPAddon(KSPAddon.Startup.MainMenu, false)]
-    class YARK_CFG:MonoBehaviour
+    class Config:MonoBehaviour
     {
         public static PluginConfiguration cfg;
         // Throttle and axis controls have the following settings:
@@ -14,6 +14,8 @@ namespace KSP_YARK
         // 1: The external value (read from serial packet) is always used.
         // 2: If the internal value is not zero use it, otherwise use the external value.
         // 3: If the external value is not zero use it, otherwise use the internal value.        
+        public static int TCPPort;
+        public static int UpdatesPerSecond;
         public static int PitchEnable;
         public static int RollEnable;
         public static int YawEnable;
@@ -27,8 +29,10 @@ namespace KSP_YARK
 
         void Awake()
         {
-            cfg = PluginConfiguration.CreateForType<YARK_CFG>();
+            cfg = PluginConfiguration.CreateForType<Config>();
             cfg.load();
+            TCPPort = cfg.GetValue<int>("TCPPort");
+            UpdatesPerSecond = cfg.GetValue<int>("UpdatesPerSecond");
             PitchEnable = cfg.GetValue<int>("PitchEnable");
             RollEnable = cfg.GetValue<int>("RollEnable");
             YawEnable = cfg.GetValue<int>("YawEnable");
@@ -39,12 +43,6 @@ namespace KSP_YARK
             ThrottleEnable = cfg.GetValue<int>("ThrottleEnable");
             WheelThrottleEnable = cfg.GetValue<int>("WheelThrottleEnable");
             SASTol = cfg.GetValue<double>("SASTol");
-
-            Debug.Log("asdasfASDFSDFSD: " + TYEnable);
-
-            PitchEnable = RollEnable = YawEnable = TXEnable = TYEnable = TZEnable = WheelSteerEnable = ThrottleEnable = WheelThrottleEnable = 2;
-            SASTol = 0.1;
-
         }
 
     }

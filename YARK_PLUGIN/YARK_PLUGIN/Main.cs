@@ -7,6 +7,7 @@ using UnityEngine.SceneManagement;
 using KSP;
 using System.Collections.Generic;
 using KSP.UI.Screens;
+using KSP.UI.Screens.Flight;
 
 namespace KSP_YARK
 {
@@ -24,6 +25,7 @@ namespace KSP_YARK
         public static Vessel ActiveVessel;
         IOResource TempR;
         Boolean wasSASOn = false;
+        float TimeOFLastSend;
 
         public void Awake()
         {
@@ -35,7 +37,6 @@ namespace KSP_YARK
             SC.HEADER_0 = 0xDE;
             SC.HEADER_1 = 0xAD;
             SC.packetType = 0x01;
-            //SC.vessalName = new char[16];
 
             KD = new KSPData();
             KD.HEADER_0 = 0xDE;
@@ -46,7 +47,7 @@ namespace KSP_YARK
             VC = new VesselControls(false);
             VCOld = new VesselControls(false);
 
-            server = new TcpListener(IPAddress.Any, 9999);
+            server = new TcpListener(IPAddress.Any,Config.TCPPort);
             server.Start();
             conn = false;
         }
@@ -67,7 +68,7 @@ namespace KSP_YARK
                         //vessel and attache it to the current one
                         if (ActiveVessel.id != FlightGlobals.ActiveVessel.id)
                         {
-                            ActiveVessel.OnPostAutopilotUpdate -= AxisInput; 
+                            ActiveVessel.OnPostAutopilotUpdate -= AxisInput;
                             ActiveVessel = FlightGlobals.ActiveVessel;
                             ActiveVessel.OnPostAutopilotUpdate += AxisInput;
                             //sync some inputs on vessel switch
@@ -105,6 +106,7 @@ namespace KSP_YARK
                 conn = true;
                 bool wasFlight = SceneManager.GetActiveScene().buildIndex == 7;
                 SendNewStatus();
+                TimeOFLastSend = 0;
             }
         }
         public void OnDisable()
@@ -144,9 +146,39 @@ namespace KSP_YARK
 
         private void SendKD()
         {
+            float time = Time.unscaledTime;
+            if ((time - TimeOFLastSend) < (1.0f / (float)(Config.UpdatesPerSecond)))
+            {
+                return;
+            }
+            TimeOFLastSend = time;
             List<Part> ActiveEngines = new List<Part>();
             ActiveEngines = GetListOfActivatedEngines(ActiveVessel);
 
+            KD.AP = (float)ActiveVessel.orbit.ApA;
+            KD.PE = (float)ActiveVessel.orbit.PeA;
+            KD.SemiMajorAxis = (float)ActiveVessel.orbit.semiMajorAxis;
+            KD.SemiMinorAxis = (float)ActiveVessel.orbit.semiMinorAxis;
+            KD.e = (float)ActiveVessel.orbit.eccentricity;
+            KD.inc = (float)ActiveVessel.orbit.inclination;
+            KD.VVI = (float)ActiveVessel.verticalSpeed;
+            KD.G = (float)ActiveVessel.geeForce;
+            KD.TAp = (int)Math.Round(ActiveVessel.orbit.timeToAp);
+            KD.TPe = (int)Math.Round(ActiveVessel.orbit.timeToPe);
+            KD.TrueAnomaly = (float)ActiveVessel.orbit.trueAnomaly;
+            KD.period = (int)Math.Round(ActiveVessel.orbit.period);
+
+            //Debug.Log("KSPSerialIO: 3");
+            double ASL = ActiveVessel.mainBody.GetAltitude(ActiveVessel.CoM);
+            double AGL = (ASL - ActiveVessel.terrainAltitude);
+
+            if (AGL < ASL)
+                KD.RAlt = (float)AGL;
+            else
+                KD.RAlt = (float)ASL;
+
+            KD.Alt = (float)ASL;
+            KD.Vsurf = (float)ActiveVessel.srfSpeed;
             KD.Lat = (float)ActiveVessel.latitude;
             KD.Lon = (float)ActiveVessel.longitude;
 
@@ -180,16 +212,95 @@ namespace KSP_YARK
             KD.XenonGasTot = TempR.Max;
             KD.XenonGas = TempR.Current;
 
+            KD.MissionTime = (UInt32)Math.Round(ActiveVessel.missionTime);
 
-            Quaternion attitude = updateHeadingPitchRollField(ActiveVessel);
-            KD.Roll = (float)((attitude.eulerAngles.z > 180) ? (attitude.eulerAngles.z - 360.0) : attitude.eulerAngles.z);
-            KD.Pitch = (float)((attitude.eulerAngles.x > 180) ? (360.0 - attitude.eulerAngles.x) : -attitude.eulerAngles.x);
-            KD.Heading = (float)attitude.eulerAngles.y;
+            KD.VOrbit = (float)ActiveVessel.orbit.GetVel().magnitude;
 
-            KD.t1 = attitude.w;
-            KD.t2 = attitude.x;
-            KD.t3 = attitude.y;
-            KD.t4 = attitude.z;
+            KD.MNTime = 0;
+            KD.MNDeltaV = 0;
+
+            if (ActiveVessel.patchedConicSolver != null)
+            {
+                if (ActiveVessel.patchedConicSolver.maneuverNodes != null)
+                {
+                    if (ActiveVessel.patchedConicSolver.maneuverNodes.Count > 0)
+                    {
+                        KD.MNTime = (UInt32)Math.Round(ActiveVessel.patchedConicSolver.maneuverNodes[0].UT - Planetarium.GetUniversalTime());
+                        KD.MNDeltaV = (float)ActiveVessel.patchedConicSolver.maneuverNodes[0].GetBurnVector(ActiveVessel.patchedConicSolver.maneuverNodes[0].patch).magnitude; //Added JS
+                    }
+                }
+            }
+
+            //Debug.Log("KSPSerialIO: 5");
+
+            Vector attitude = SanatizeVector(updateHeadingPitchRollField(ActiveVessel).eulerAngles);
+
+            KD.Roll = attitude.z;
+            KD.Pitch = attitude.x;
+            KD.Heading = attitude.y;
+            //KD.Roll = (float)((attitude.eulerAngles.z > 180) ? (attitude.eulerAngles.z - 360.0) : attitude.eulerAngles.z);
+            //KD.Heading = (float)attitude.eulerAngles.y;
+            //KD.Pitch = (float)((attitude.eulerAngles.x > 180) ? (360.0 - attitude.eulerAngles.x) : -attitude.eulerAngles.x);
+
+
+           // FlightUIController fc;
+
+
+            GameObject navballGameObject = GameObject.Find("InternalNavBall ");
+            InternalNavBall navball = navballGameObject.GetComponent<InternalNavBall>();
+            if(navball == null)
+            {
+                Debug.Log("navball null");
+            }
+            //Vector foo = SanatizeVector(navball.progradeVector.eulerAngles);
+            // KD.Prograde = SanatizeVector(navball.progradeVector.eulerAngles);
+
+            ControlStatus((int)ActionGroups.SAS, ActiveVessel.ActionGroups[KSPActionGroup.SAS]);
+            ControlStatus((int)ActionGroups.RCS, ActiveVessel.ActionGroups[KSPActionGroup.RCS]);
+            ControlStatus((int)ActionGroups.Light, ActiveVessel.ActionGroups[KSPActionGroup.Light]);
+            ControlStatus((int)ActionGroups.Gear, ActiveVessel.ActionGroups[KSPActionGroup.Gear]);
+            ControlStatus((int)ActionGroups.Brakes, ActiveVessel.ActionGroups[KSPActionGroup.Brakes]);
+            ControlStatus((int)ActionGroups.Abort, ActiveVessel.ActionGroups[KSPActionGroup.Abort]);
+            ControlStatus((int)ActionGroups.Custom01, ActiveVessel.ActionGroups[KSPActionGroup.Custom01]);
+            ControlStatus((int)ActionGroups.Custom02, ActiveVessel.ActionGroups[KSPActionGroup.Custom02]);
+            ControlStatus((int)ActionGroups.Custom03, ActiveVessel.ActionGroups[KSPActionGroup.Custom03]);
+            ControlStatus((int)ActionGroups.Custom04, ActiveVessel.ActionGroups[KSPActionGroup.Custom04]);
+            ControlStatus((int)ActionGroups.Custom05, ActiveVessel.ActionGroups[KSPActionGroup.Custom05]);
+            ControlStatus((int)ActionGroups.Custom06, ActiveVessel.ActionGroups[KSPActionGroup.Custom06]);
+            ControlStatus((int)ActionGroups.Custom07, ActiveVessel.ActionGroups[KSPActionGroup.Custom07]);
+            ControlStatus((int)ActionGroups.Custom08, ActiveVessel.ActionGroups[KSPActionGroup.Custom08]);
+            ControlStatus((int)ActionGroups.Custom09, ActiveVessel.ActionGroups[KSPActionGroup.Custom09]);
+            ControlStatus((int)ActionGroups.Custom10, ActiveVessel.ActionGroups[KSPActionGroup.Custom10]);
+
+            if (ActiveVessel.orbit.referenceBody != null)
+            {
+                KD.SOINumber = GetSOINumber(ActiveVessel.orbit.referenceBody.name);
+            }
+
+            KD.MaxOverHeat = GetMaxOverHeat(ActiveVessel);
+            KD.IAS = (float)ActiveVessel.indicatedAirSpeed;
+
+            KD.CurrentStage = (byte)StageManager.CurrentStage;
+            KD.TotalStage = (byte)StageManager.StageCount;
+
+            //target distance and velocity stuff                    
+
+            KD.TargetDist = 0;
+            KD.TargetV = 0;
+
+            if (TargetExists())
+            {
+                KD.TargetDist = (float)Vector3.Distance(FlightGlobals.fetch.VesselTarget.GetVessel().transform.position, ActiveVessel.transform.position);
+                KD.TargetV = (float)FlightGlobals.ship_tgtVelocity.magnitude;
+            }
+
+
+            KD.NavballSASMode = (byte)(((int)FlightGlobals.speedDisplayMode + 1) << 4); //get navball speed display mode
+            if (ActiveVessel.ActionGroups[KSPActionGroup.SAS])
+            {
+                KD.NavballSASMode = (byte)(((int)FlightGlobals.ActiveVessel.Autopilot.Mode + 1) | KD.NavballSASMode);
+            }
+
 
             KD.ID++;
 
@@ -334,13 +445,10 @@ namespace KSP_YARK
                 }
                 VCOld.SpeedMode = VC.SpeedMode;
             }
-            
-            Debug.Log("pitch: " + VC.Pitch);
 
-            
-            if (Math.Abs(VC.Pitch) > YARK_CFG.SASTol ||
-            Math.Abs(VC.Roll) > YARK_CFG.SASTol ||
-            Math.Abs(VC.Yaw) > YARK_CFG.SASTol)
+                        if (Math.Abs(VC.Pitch) > Config.SASTol ||
+            Math.Abs(VC.Roll) > Config.SASTol ||
+            Math.Abs(VC.Yaw) > Config.SASTol)
             {
                 if ((ActiveVessel.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
                 {
@@ -400,7 +508,7 @@ namespace KSP_YARK
             }
         }
 
-        #region structs
+        #region structsNStuff
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public unsafe struct StatusChange
         {
@@ -412,18 +520,53 @@ namespace KSP_YARK
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct Vector {
+           public float x, y, z;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public struct KSPData
         {
+            //##### HEADER ######
             public byte HEADER_0;
             public byte HEADER_1;
             public byte packetType;
             public long ID;
-            public float Roll;
+
+            //##### CRAFT ######
             public float Pitch;
+            public float Roll;
             public float Heading;
-            public float t1, t2, t3, t4;
+
+            public Vector Prograde;
+
+            public UInt16 ActionGroups; //  status bit order:SAS, RCS, Light, Gear, Brakes, Abort, Custom01 - 10 
+            public float VVI;
+            public float G;
+            public float RAlt;
+            public float Alt;
+            public float Vsurf;
+            public byte MaxOverHeat;    //  Max part overheat (% percent)
+            public float IAS;           //  Indicated Air Speed
+
+            //###### ORBITAL ######
+            public float VOrbit;
+            public float AP;
+            public float PE;
+            public int TAp;
+            public int TPe;
+            public float SemiMajorAxis;
+            public float SemiMinorAxis;
+            public float e;
+            public float inc;
+            public int period;
+            public float TrueAnomaly;
             public float Lat;
             public float Lon;
+
+            //###### FUEL #######
+            public byte CurrentStage;   //  Current stage number
+            public byte TotalStage;     //  TotalNumber of stages
             public float LiquidFuelTot;
             public float LiquidFuel;
             public float OxidizerTot;
@@ -442,8 +585,21 @@ namespace KSP_YARK
             public float LiquidFuelS;
             public float OxidizerTotS;
             public float OxidizerS;
-        }
 
+            //### MISC ###
+            public UInt32 MissionTime;
+            public UInt32 MNTime;
+            public float MNDeltaV;
+            public float TargetDist;    //  Distance to targeted vessel (m)
+            public float TargetV;       //  Target vessel relative velocity (m/s)
+            public byte SOINumber;      //  SOI Number (decimal format: sun-planet-moon e.g. 130 = kerbin, 131 = mun)
+            public byte NavballSASMode; //  Combined byte for navball target mode and SAS mode
+                                        // First four bits indicate AutoPilot mode:
+                                        // 0 SAS is off  //1 = Regular Stability Assist //2 = Prograde
+                                        // 3 = RetroGrade //4 = Normal //5 = Antinormal //6 = Radial In
+                                        // 7 = Radial Out //8 = Target //9 = Anti-Target //10 = Maneuver node
+                                        // Last 4 bits set navball mode. (0=ignore,1=ORBIT,2=SURFACE,3=TARGET)}
+        }
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public struct ControlPacket
         {
@@ -497,6 +653,26 @@ namespace KSP_YARK
             }
         };
 
+        enum ActionGroups : int
+        {
+            SAS,
+            RCS,
+            Light,
+            Gear,
+            Brakes,
+            Abort,
+            Custom01,
+            Custom02,
+            Custom03,
+            Custom04,
+            Custom05,
+            Custom06,
+            Custom07,
+            Custom08,
+            Custom09,
+            Custom10,
+        };
+
         public struct IOResource
         {
             public float Max;
@@ -516,7 +692,6 @@ namespace KSP_YARK
             return Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(v.GetTransform().rotation) * rotationSurface);
         }
 
-        // this recursive stage look up stuff stolen and modified from KOS and others
         public static List<Part> GetListOfActivatedEngines(Vessel vessel)
         {
             var retList = new List<Part>();
@@ -547,7 +722,7 @@ namespace KSP_YARK
             }
 
             return retList;
-        }
+        } // this recursive stage look up stuff stolen and modified from KOS and others
 
         public static double ProspectForResource(String resourceName, List<Part> engines)
         {
@@ -662,6 +837,7 @@ namespace KSP_YARK
 
             return ret;
         }
+
         private IOResource GetResourceTotal(Vessel V, string resourceName)
         {
             IOResource R = new IOResource();
@@ -683,6 +859,7 @@ namespace KSP_YARK
 
             return R;
         }
+
         private Boolean BitMathByte(byte x, int n)
         {
             return ((x >> n) & 1) == 1;
@@ -692,6 +869,7 @@ namespace KSP_YARK
         {
             return ((x >> n) & 1) == 1;
         }
+
         private Boolean TargetExists()
         {
             return (FlightGlobals.fetch.VesselTarget != null) && (FlightGlobals.fetch.VesselTarget.GetVessel() != null); //&& is short circuiting
@@ -699,7 +877,7 @@ namespace KSP_YARK
 
         private void AxisInput(FlightCtrlState s)
         {
-            switch (YARK_CFG.ThrottleEnable)
+            switch (Config.ThrottleEnable)
             {
                 case 1:
                     s.mainThrottle = VC.Throttle;
@@ -720,7 +898,7 @@ namespace KSP_YARK
                     break;
             }
 
-            switch (YARK_CFG.PitchEnable)
+            switch (Config.PitchEnable)
             {
                 case 1:
                     s.pitch = VC.Pitch;
@@ -737,7 +915,7 @@ namespace KSP_YARK
                     break;
             }
 
-            switch (YARK_CFG.RollEnable)
+            switch (Config.RollEnable)
             {
                 case 1:
                     s.roll = VC.Roll;
@@ -754,7 +932,7 @@ namespace KSP_YARK
                     break;
             }
 
-            switch (YARK_CFG.YawEnable)
+            switch (Config.YawEnable)
             {
                 case 1:
                     s.yaw = VC.Yaw;
@@ -775,7 +953,7 @@ namespace KSP_YARK
             {
             }
             */
-            switch (YARK_CFG.TXEnable)
+            switch (Config.TXEnable)
             {
                 case 1:
                     s.X = VC.TX;
@@ -792,7 +970,7 @@ namespace KSP_YARK
                     break;
             }
 
-            switch (YARK_CFG.TYEnable)
+            switch (Config.TYEnable)
             {
                 case 1:
                     s.Y = VC.TY;
@@ -809,7 +987,7 @@ namespace KSP_YARK
                     break;
             }
 
-            switch (YARK_CFG.TZEnable)
+            switch (Config.TZEnable)
             {
                 case 1:
                     s.Z = VC.TZ;
@@ -826,7 +1004,7 @@ namespace KSP_YARK
                     break;
             }
 
-            switch (YARK_CFG.WheelSteerEnable)
+            switch (Config.WheelSteerEnable)
             {
                 case 1:
                     s.wheelSteer = VC.WheelSteer;
@@ -847,7 +1025,7 @@ namespace KSP_YARK
                     break;
             }
 
-            switch (YARK_CFG.WheelThrottleEnable)
+            switch (Config.WheelThrottleEnable)
             {
                 case 1:
                     s.wheelThrottle = VC.WheelThrottle;
@@ -869,7 +1047,112 @@ namespace KSP_YARK
             }
         }
 
+        private byte GetSOINumber(string name)
+        {
+            byte SOI;
 
+            switch (name.ToLower())
+            {
+                case "sun":
+                    SOI = 100;
+                    break;
+                case "moho":
+                    SOI = 110;
+                    break;
+                case "eve":
+                    SOI = 120;
+                    break;
+                case "gilly":
+                    SOI = 121;
+                    break;
+                case "kerbin":
+                    SOI = 130;
+                    break;
+                case "mun":
+                    SOI = 131;
+                    break;
+                case "minmus":
+                    SOI = 132;
+                    break;
+                case "duna":
+                    SOI = 140;
+                    break;
+                case "ike":
+                    SOI = 141;
+                    break;
+                case "dres":
+                    SOI = 150;
+                    break;
+                case "jool":
+                    SOI = 160;
+                    break;
+                case "laythe":
+                    SOI = 161;
+                    break;
+                case "vall":
+                    SOI = 162;
+                    break;
+                case "tylo":
+                    SOI = 163;
+                    break;
+                case "bop":
+                    SOI = 164;
+                    break;
+                case "pol":
+                    SOI = 165;
+                    break;
+                case "eeloo":
+                    SOI = 170;
+                    break;
+                default:
+                    SOI = 0;
+                    break;
+            }
+            return SOI;
+        }
+
+        private byte GetMaxOverHeat(Vessel V)
+        {
+            byte percent = 0;
+            double sPercent = 0, iPercent = 0;
+            double percentD = 0, percentP = 0;
+
+            foreach (Part p in ActiveVessel.parts)
+            {
+                //internal temperature
+                iPercent = p.temperature / p.maxTemp;
+                //skin temperature
+                sPercent = p.skinTemperature / p.skinMaxTemp;
+
+                if (iPercent > sPercent)
+                    percentP = iPercent;
+                else
+                    percentP = sPercent;
+
+                if (percentD < percentP)
+                    percentD = percentP;
+            }
+
+            percent = (byte)Math.Round(percentD * 100);
+            return percent;
+        }
+
+        private void ControlStatus(int n, bool s)
+        {
+            if (s)
+                KD.ActionGroups |= (UInt16)(1 << n);       // forces nth bit of x to be 1.  all other bits left alone.
+            else
+                KD.ActionGroups &= (UInt16)~(1 << n);      // forces nth bit of x to be 0.  all other bits left alone.
+        }
+
+        private Vector SanatizeVector(Vector3 v)
+        {
+            Vector vec;
+            vec.z = (float)((v.z > 180) ? (v.z - 360.0) : v.z);
+            vec.x = (float)((v.x > 180) ? (360.0 - v.x) : -v.x);
+            vec.y = (float)v.y;
+            return vec;
+        }
         #endregion
     }
 
