@@ -22,7 +22,7 @@ namespace KSP_YARK
         StatusChange SC;
         VesselControls VC, VCOld;
         bool inFlight;
-        public static Vessel ActiveVessel;
+        public static Vessel AV;
         IOResource TempR;
         Boolean wasSASOn = false;
         float TimeOFLastSend;
@@ -32,7 +32,7 @@ namespace KSP_YARK
             TempR = new IOResource();
             DontDestroyOnLoad(gameObject);
             Debug.Log("GO");
-            ActiveVessel = new Vessel();
+            AV = new Vessel();
             SC = new StatusChange();
             SC.HEADER_0 = 0xDE;
             SC.HEADER_1 = 0xAD;
@@ -47,7 +47,7 @@ namespace KSP_YARK
             VC = new VesselControls(false);
             VCOld = new VesselControls(false);
 
-            server = new TcpListener(IPAddress.Any,Config.TCPPort);
+            server = new TcpListener(IPAddress.Any, Config.TCPPort);
             server.Start();
             conn = false;
         }
@@ -66,11 +66,11 @@ namespace KSP_YARK
                     {
                         //If the current active vessel is not what we were using, we need to remove controls from the old 
                         //vessel and attache it to the current one
-                        if (ActiveVessel.id != FlightGlobals.ActiveVessel.id)
+                        if (AV.id != FlightGlobals.ActiveVessel.id)
                         {
-                            ActiveVessel.OnPostAutopilotUpdate -= AxisInput;
-                            ActiveVessel = FlightGlobals.ActiveVessel;
-                            ActiveVessel.OnPostAutopilotUpdate += AxisInput;
+                            AV.OnPostAutopilotUpdate -= AxisInput;
+                            AV = FlightGlobals.ActiveVessel;
+                            AV.OnPostAutopilotUpdate += AxisInput;
                             //sync some inputs on vessel switch
                             //ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
                             //ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
@@ -80,7 +80,7 @@ namespace KSP_YARK
                         }
                         else
                         {
-                            ActiveVessel = FlightGlobals.ActiveVessel;
+                            AV = FlightGlobals.ActiveVessel;
                         }
                         SendKD();
                         UpdateControls();
@@ -92,7 +92,7 @@ namespace KSP_YARK
                             Debug.Log("left flight");
                             inFlight = false;
                             SendNewStatus();
-                            ActiveVessel = new Vessel();
+                            AV = new Vessel();
                         }
                     }
                     ServerReceive();
@@ -117,7 +117,7 @@ namespace KSP_YARK
         {
             Debug.Log("send new status");
             SC.status = inFlight ? (byte)1 : (byte)0;
-            char[] name = inFlight ? ActiveVessel.vesselName.ToCharArray() : "null".ToCharArray();
+            char[] name = inFlight ? AV.vesselName.ToCharArray() : "null".ToCharArray();
 
             unsafe
             {
@@ -153,24 +153,24 @@ namespace KSP_YARK
             }
             TimeOFLastSend = time;
             List<Part> ActiveEngines = new List<Part>();
-            ActiveEngines = GetListOfActivatedEngines(ActiveVessel);
+            ActiveEngines = GetListOfActivatedEngines(AV);
 
-            KD.AP = (float)ActiveVessel.orbit.ApA;
-            KD.PE = (float)ActiveVessel.orbit.PeA;
-            KD.SemiMajorAxis = (float)ActiveVessel.orbit.semiMajorAxis;
-            KD.SemiMinorAxis = (float)ActiveVessel.orbit.semiMinorAxis;
-            KD.e = (float)ActiveVessel.orbit.eccentricity;
-            KD.inc = (float)ActiveVessel.orbit.inclination;
-            KD.VVI = (float)ActiveVessel.verticalSpeed;
-            KD.G = (float)ActiveVessel.geeForce;
-            KD.TAp = (int)Math.Round(ActiveVessel.orbit.timeToAp);
-            KD.TPe = (int)Math.Round(ActiveVessel.orbit.timeToPe);
-            KD.TrueAnomaly = (float)ActiveVessel.orbit.trueAnomaly;
-            KD.period = (int)Math.Round(ActiveVessel.orbit.period);
+            KD.AP = (float)AV.orbit.ApA;
+            KD.PE = (float)AV.orbit.PeA;
+            KD.SemiMajorAxis = (float)AV.orbit.semiMajorAxis;
+            KD.SemiMinorAxis = (float)AV.orbit.semiMinorAxis;
+            KD.e = (float)AV.orbit.eccentricity;
+            KD.inc = (float)AV.orbit.inclination;
+            KD.VVI = (float)AV.verticalSpeed;
+            KD.G = (float)AV.geeForce;
+            KD.TAp = (int)Math.Round(AV.orbit.timeToAp);
+            KD.TPe = (int)Math.Round(AV.orbit.timeToPe);
+            KD.TrueAnomaly = (float)AV.orbit.trueAnomaly;
+            KD.period = (int)Math.Round(AV.orbit.period);
 
             //Debug.Log("KSPSerialIO: 3");
-            double ASL = ActiveVessel.mainBody.GetAltitude(ActiveVessel.CoM);
-            double AGL = (ASL - ActiveVessel.terrainAltitude);
+            double ASL = AV.mainBody.GetAltitude(AV.CoM);
+            double AGL = (ASL - AV.terrainAltitude);
 
             if (AGL < ASL)
                 KD.RAlt = (float)AGL;
@@ -178,107 +178,118 @@ namespace KSP_YARK
                 KD.RAlt = (float)ASL;
 
             KD.Alt = (float)ASL;
-            KD.Vsurf = (float)ActiveVessel.srfSpeed;
-            KD.Lat = (float)ActiveVessel.latitude;
-            KD.Lon = (float)ActiveVessel.longitude;
+            KD.Vsurf = (float)AV.srfSpeed;
+            KD.Lat = (float)AV.latitude;
+            KD.Lon = (float)AV.longitude;
 
-            TempR = GetResourceTotal(ActiveVessel, "LiquidFuel");
+            TempR = GetResourceTotal(AV, "LiquidFuel");
             KD.LiquidFuelTot = TempR.Max;
             KD.LiquidFuel = TempR.Current;
 
             KD.LiquidFuelTotS = (float)ProspectForResourceMax("LiquidFuel", ActiveEngines);
             KD.LiquidFuelS = (float)ProspectForResource("LiquidFuel", ActiveEngines);
 
-            TempR = GetResourceTotal(ActiveVessel, "Oxidizer");
+            TempR = GetResourceTotal(AV, "Oxidizer");
             KD.OxidizerTot = TempR.Max;
             KD.Oxidizer = TempR.Current;
 
             KD.OxidizerTotS = (float)ProspectForResourceMax("Oxidizer", ActiveEngines);
             KD.OxidizerS = (float)ProspectForResource("Oxidizer", ActiveEngines);
 
-            TempR = GetResourceTotal(ActiveVessel, "ElectricCharge");
+            TempR = GetResourceTotal(AV, "ElectricCharge");
             KD.EChargeTot = TempR.Max;
             KD.ECharge = TempR.Current;
-            TempR = GetResourceTotal(ActiveVessel, "MonoPropellant");
+            TempR = GetResourceTotal(AV, "MonoPropellant");
             KD.MonoPropTot = TempR.Max;
             KD.MonoProp = TempR.Current;
-            TempR = GetResourceTotal(ActiveVessel, "IntakeAir");
+            TempR = GetResourceTotal(AV, "IntakeAir");
             KD.IntakeAirTot = TempR.Max;
             KD.IntakeAir = TempR.Current;
-            TempR = GetResourceTotal(ActiveVessel, "SolidFuel");
+            TempR = GetResourceTotal(AV, "SolidFuel");
             KD.SolidFuelTot = TempR.Max;
             KD.SolidFuel = TempR.Current;
-            TempR = GetResourceTotal(ActiveVessel, "XenonGas");
+            TempR = GetResourceTotal(AV, "XenonGas");
             KD.XenonGasTot = TempR.Max;
             KD.XenonGas = TempR.Current;
 
-            KD.MissionTime = (UInt32)Math.Round(ActiveVessel.missionTime);
+            KD.MissionTime = (UInt32)Math.Round(AV.missionTime);
 
-            KD.VOrbit = (float)ActiveVessel.orbit.GetVel().magnitude;
+            KD.VOrbit = (float)AV.orbit.GetVel().magnitude;
 
             KD.MNTime = 0;
             KD.MNDeltaV = 0;
 
-            if (ActiveVessel.patchedConicSolver != null)
+            if (AV.patchedConicSolver != null)
             {
-                if (ActiveVessel.patchedConicSolver.maneuverNodes != null)
+                if (AV.patchedConicSolver.maneuverNodes != null)
                 {
-                    if (ActiveVessel.patchedConicSolver.maneuverNodes.Count > 0)
+                    if (AV.patchedConicSolver.maneuverNodes.Count > 0)
                     {
-                        KD.MNTime = (UInt32)Math.Round(ActiveVessel.patchedConicSolver.maneuverNodes[0].UT - Planetarium.GetUniversalTime());
-                        KD.MNDeltaV = (float)ActiveVessel.patchedConicSolver.maneuverNodes[0].GetBurnVector(ActiveVessel.patchedConicSolver.maneuverNodes[0].patch).magnitude; //Added JS
+                        KD.MNTime = (UInt32)Math.Round(AV.patchedConicSolver.maneuverNodes[0].UT - Planetarium.GetUniversalTime());
+                        KD.MNDeltaV = (float)AV.patchedConicSolver.maneuverNodes[0].GetBurnVector(AV.patchedConicSolver.maneuverNodes[0].patch).magnitude; //Added JS
                     }
                 }
             }
 
             //Debug.Log("KSPSerialIO: 5");
 
-            Vector attitude = SanatizeVector(updateHeadingPitchRollField(ActiveVessel).eulerAngles);
+            Vector3d CoM, north, up;
+            Quaternion rotationSurface;
+            CoM = AV.CoM;
+            up = (CoM - AV.mainBody.position).normalized;
+            north = Vector3d.Exclude(up, (AV.mainBody.position + AV.mainBody.transform.up * (float)AV.mainBody.Radius) - CoM).normalized;
+            rotationSurface = Quaternion.LookRotation(north, up);
 
+            Vector attitude = SanatizeVector(Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(AV.GetTransform().rotation) * rotationSurface).eulerAngles);
             KD.Roll = attitude.z;
             KD.Pitch = attitude.x;
             KD.Heading = attitude.y;
-            //KD.Roll = (float)((attitude.eulerAngles.z > 180) ? (attitude.eulerAngles.z - 360.0) : attitude.eulerAngles.z);
-            //KD.Heading = (float)attitude.eulerAngles.y;
-            //KD.Pitch = (float)((attitude.eulerAngles.x > 180) ? (360.0 - attitude.eulerAngles.x) : -attitude.eulerAngles.x);
 
 
-           // FlightUIController fc;
 
+            //Vector3d prograde = (rotationSurface * AV.srf_vel_direction).normalized;
+            Vector3d prograde = AV.srf_velocity.normalized;
+            Vector3d east = Vector3d.Cross(up, north);
+            KD.Prograde.Pitch = (float)-((Vector3d.Angle(up, prograde)) - 90.0f);
 
-            GameObject navballGameObject = GameObject.Find("InternalNavBall ");
-            InternalNavBall navball = navballGameObject.GetComponent<InternalNavBall>();
-            if(navball == null)
+            Vector3d progradeFlat = Vector3d.Exclude(up, prograde);
+            float NAngle = (float)Vector3d.Angle(north, progradeFlat);
+            float EAngle = (float)Vector3d.Angle(east, progradeFlat);
+
+            if (EAngle < 90)
             {
-                Debug.Log("navball null");
+                KD.Prograde.Heading = NAngle;
             }
-            //Vector foo = SanatizeVector(navball.progradeVector.eulerAngles);
-            // KD.Prograde = SanatizeVector(navball.progradeVector.eulerAngles);
-
-            ControlStatus((int)ActionGroups.SAS, ActiveVessel.ActionGroups[KSPActionGroup.SAS]);
-            ControlStatus((int)ActionGroups.RCS, ActiveVessel.ActionGroups[KSPActionGroup.RCS]);
-            ControlStatus((int)ActionGroups.Light, ActiveVessel.ActionGroups[KSPActionGroup.Light]);
-            ControlStatus((int)ActionGroups.Gear, ActiveVessel.ActionGroups[KSPActionGroup.Gear]);
-            ControlStatus((int)ActionGroups.Brakes, ActiveVessel.ActionGroups[KSPActionGroup.Brakes]);
-            ControlStatus((int)ActionGroups.Abort, ActiveVessel.ActionGroups[KSPActionGroup.Abort]);
-            ControlStatus((int)ActionGroups.Custom01, ActiveVessel.ActionGroups[KSPActionGroup.Custom01]);
-            ControlStatus((int)ActionGroups.Custom02, ActiveVessel.ActionGroups[KSPActionGroup.Custom02]);
-            ControlStatus((int)ActionGroups.Custom03, ActiveVessel.ActionGroups[KSPActionGroup.Custom03]);
-            ControlStatus((int)ActionGroups.Custom04, ActiveVessel.ActionGroups[KSPActionGroup.Custom04]);
-            ControlStatus((int)ActionGroups.Custom05, ActiveVessel.ActionGroups[KSPActionGroup.Custom05]);
-            ControlStatus((int)ActionGroups.Custom06, ActiveVessel.ActionGroups[KSPActionGroup.Custom06]);
-            ControlStatus((int)ActionGroups.Custom07, ActiveVessel.ActionGroups[KSPActionGroup.Custom07]);
-            ControlStatus((int)ActionGroups.Custom08, ActiveVessel.ActionGroups[KSPActionGroup.Custom08]);
-            ControlStatus((int)ActionGroups.Custom09, ActiveVessel.ActionGroups[KSPActionGroup.Custom09]);
-            ControlStatus((int)ActionGroups.Custom10, ActiveVessel.ActionGroups[KSPActionGroup.Custom10]);
-
-            if (ActiveVessel.orbit.referenceBody != null)
+            else
             {
-                KD.SOINumber = GetSOINumber(ActiveVessel.orbit.referenceBody.name);
+                KD.Prograde.Heading = -NAngle + 360;
+            }
+            
+            
+            ControlStatus((int)ActionGroups.SAS, AV.ActionGroups[KSPActionGroup.SAS]);
+            ControlStatus((int)ActionGroups.RCS, AV.ActionGroups[KSPActionGroup.RCS]);
+            ControlStatus((int)ActionGroups.Light, AV.ActionGroups[KSPActionGroup.Light]);
+            ControlStatus((int)ActionGroups.Gear, AV.ActionGroups[KSPActionGroup.Gear]);
+            ControlStatus((int)ActionGroups.Brakes, AV.ActionGroups[KSPActionGroup.Brakes]);
+            ControlStatus((int)ActionGroups.Abort, AV.ActionGroups[KSPActionGroup.Abort]);
+            ControlStatus((int)ActionGroups.Custom01, AV.ActionGroups[KSPActionGroup.Custom01]);
+            ControlStatus((int)ActionGroups.Custom02, AV.ActionGroups[KSPActionGroup.Custom02]);
+            ControlStatus((int)ActionGroups.Custom03, AV.ActionGroups[KSPActionGroup.Custom03]);
+            ControlStatus((int)ActionGroups.Custom04, AV.ActionGroups[KSPActionGroup.Custom04]);
+            ControlStatus((int)ActionGroups.Custom05, AV.ActionGroups[KSPActionGroup.Custom05]);
+            ControlStatus((int)ActionGroups.Custom06, AV.ActionGroups[KSPActionGroup.Custom06]);
+            ControlStatus((int)ActionGroups.Custom07, AV.ActionGroups[KSPActionGroup.Custom07]);
+            ControlStatus((int)ActionGroups.Custom08, AV.ActionGroups[KSPActionGroup.Custom08]);
+            ControlStatus((int)ActionGroups.Custom09, AV.ActionGroups[KSPActionGroup.Custom09]);
+            ControlStatus((int)ActionGroups.Custom10, AV.ActionGroups[KSPActionGroup.Custom10]);
+
+            if (AV.orbit.referenceBody != null)
+            {
+                KD.SOINumber = GetSOINumber(AV.orbit.referenceBody.name);
             }
 
-            KD.MaxOverHeat = GetMaxOverHeat(ActiveVessel);
-            KD.IAS = (float)ActiveVessel.indicatedAirSpeed;
+            KD.MaxOverHeat = GetMaxOverHeat(AV);
+            KD.IAS = (float)AV.indicatedAirSpeed;
 
             KD.CurrentStage = (byte)StageManager.CurrentStage;
             KD.TotalStage = (byte)StageManager.StageCount;
@@ -290,13 +301,13 @@ namespace KSP_YARK
 
             if (TargetExists())
             {
-                KD.TargetDist = (float)Vector3.Distance(FlightGlobals.fetch.VesselTarget.GetVessel().transform.position, ActiveVessel.transform.position);
+                KD.TargetDist = (float)Vector3.Distance(FlightGlobals.fetch.VesselTarget.GetVessel().transform.position, AV.transform.position);
                 KD.TargetV = (float)FlightGlobals.ship_tgtVelocity.magnitude;
             }
 
 
             KD.NavballSASMode = (byte)(((int)FlightGlobals.speedDisplayMode + 1) << 4); //get navball speed display mode
-            if (ActiveVessel.ActionGroups[KSPActionGroup.SAS])
+            if (AV.ActionGroups[KSPActionGroup.SAS])
             {
                 KD.NavballSASMode = (byte)(((int)FlightGlobals.ActiveVessel.Autopilot.Mode + 1) | KD.NavballSASMode);
             }
@@ -320,32 +331,32 @@ namespace KSP_YARK
         {
             if (VC.RCS != VCOld.RCS)
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
+                AV.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
                 VCOld.RCS = VC.RCS;
             }
             if (VC.SAS != VCOld.SAS)
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
+                AV.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
                 VCOld.SAS = VC.SAS;
             }
             if (VC.Lights != VCOld.Lights)
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Light, VC.Lights);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Light, VC.Lights);
                 VCOld.Lights = VC.Lights;
             }
             if (VC.Gear != VCOld.Gear)
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Gear, VC.Gear);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Gear, VC.Gear);
                 VCOld.Gear = VC.Gear;
             }
             if (VC.Brakes != VCOld.Brakes)
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, VC.Brakes);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Brakes, VC.Brakes);
                 VCOld.Brakes = VC.Brakes;
             }
             if (VC.Abort != VCOld.Abort)
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Abort, VC.Abort);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Abort, VC.Abort);
                 VCOld.Abort = VC.Abort;
             }
             if (VC.Stage != VCOld.Stage)
@@ -353,7 +364,7 @@ namespace KSP_YARK
                 if (VC.Stage)
                     StageManager.ActivateNextStage();
 
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Stage, VC.Stage);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Stage, VC.Stage);
                 VCOld.Stage = VC.Stage;
             }
 
@@ -361,61 +372,61 @@ namespace KSP_YARK
 
             if (VC.ControlGroup[1] != VCOld.ControlGroup[1])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom01, VC.ControlGroup[1]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom01, VC.ControlGroup[1]);
                 VCOld.ControlGroup[1] = VC.ControlGroup[1];
             }
 
             if (VC.ControlGroup[2] != VCOld.ControlGroup[2])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom02, VC.ControlGroup[2]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom02, VC.ControlGroup[2]);
                 VCOld.ControlGroup[2] = VC.ControlGroup[2];
             }
 
             if (VC.ControlGroup[3] != VCOld.ControlGroup[3])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom03, VC.ControlGroup[3]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom03, VC.ControlGroup[3]);
                 VCOld.ControlGroup[3] = VC.ControlGroup[3];
             }
 
             if (VC.ControlGroup[4] != VCOld.ControlGroup[4])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom04, VC.ControlGroup[4]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom04, VC.ControlGroup[4]);
                 VCOld.ControlGroup[4] = VC.ControlGroup[4];
             }
 
             if (VC.ControlGroup[5] != VCOld.ControlGroup[5])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom05, VC.ControlGroup[5]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom05, VC.ControlGroup[5]);
                 VCOld.ControlGroup[5] = VC.ControlGroup[5];
             }
 
             if (VC.ControlGroup[6] != VCOld.ControlGroup[6])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom06, VC.ControlGroup[6]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom06, VC.ControlGroup[6]);
                 VCOld.ControlGroup[6] = VC.ControlGroup[6];
             }
 
             if (VC.ControlGroup[7] != VCOld.ControlGroup[7])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom07, VC.ControlGroup[7]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom07, VC.ControlGroup[7]);
                 VCOld.ControlGroup[7] = VC.ControlGroup[7];
             }
 
             if (VC.ControlGroup[8] != VCOld.ControlGroup[8])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom08, VC.ControlGroup[8]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom08, VC.ControlGroup[8]);
                 VCOld.ControlGroup[8] = VC.ControlGroup[8];
             }
 
             if (VC.ControlGroup[9] != VCOld.ControlGroup[9])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom09, VC.ControlGroup[9]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom09, VC.ControlGroup[9]);
                 VCOld.ControlGroup[9] = VC.ControlGroup[9];
             }
 
             if (VC.ControlGroup[10] != VCOld.ControlGroup[10])
             {
-                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.Custom10, VC.ControlGroup[10]);
+                AV.ActionGroups.SetGroup(KSPActionGroup.Custom10, VC.ControlGroup[10]);
                 VCOld.ControlGroup[10] = VC.ControlGroup[10];
             }
 
@@ -424,13 +435,13 @@ namespace KSP_YARK
             {
                 if (VC.SASMode != 0 && VC.SASMode < 11)
                 {
-                    if (!ActiveVessel.Autopilot.CanSetMode((VesselAutopilot.AutopilotMode)(VC.SASMode - 1)))
+                    if (!AV.Autopilot.CanSetMode((VesselAutopilot.AutopilotMode)(VC.SASMode - 1)))
                     {
                         ScreenMessages.PostScreenMessage("KSPSerialIO: SAS mode " + VC.SASMode.ToString() + " not avalible");
                     }
                     else
                     {
-                        ActiveVessel.Autopilot.SetMode((VesselAutopilot.AutopilotMode)VC.SASMode - 1);
+                        AV.Autopilot.SetMode((VesselAutopilot.AutopilotMode)VC.SASMode - 1);
                     }
                 }
                 VCOld.SASMode = VC.SASMode;
@@ -446,14 +457,14 @@ namespace KSP_YARK
                 VCOld.SpeedMode = VC.SpeedMode;
             }
 
-                        if (Math.Abs(VC.Pitch) > Config.SASTol ||
-            Math.Abs(VC.Roll) > Config.SASTol ||
-            Math.Abs(VC.Yaw) > Config.SASTol)
+            if (Math.Abs(VC.Pitch) > Config.SASTol ||
+Math.Abs(VC.Roll) > Config.SASTol ||
+Math.Abs(VC.Yaw) > Config.SASTol)
             {
-                if ((ActiveVessel.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
+                if ((AV.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
                 {
                     wasSASOn = true;
-                    ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
+                    AV.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
                 }
             }
             else
@@ -461,7 +472,7 @@ namespace KSP_YARK
                 if (wasSASOn == true)
                 {
                     wasSASOn = false;
-                    ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
+                    AV.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
                 }
             }
 
@@ -520,8 +531,18 @@ namespace KSP_YARK
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
-        public struct Vector {
-           public float x, y, z;
+        public struct Vector
+        {
+            public float x, y, z;
+        }
+        public struct NavHeading
+        {
+            public float Heading, Pitch;
+            public NavHeading(float Pitch, float Heading)
+            {
+                this.Pitch = Pitch;
+                this.Heading = Heading;
+            }
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -538,7 +559,7 @@ namespace KSP_YARK
             public float Roll;
             public float Heading;
 
-            public Vector Prograde;
+            public NavHeading Prograde;
 
             public UInt16 ActionGroups; //  status bit order:SAS, RCS, Light, Gear, Brakes, Abort, Custom01 - 10 
             public float VVI;
@@ -1117,7 +1138,7 @@ namespace KSP_YARK
             double sPercent = 0, iPercent = 0;
             double percentD = 0, percentP = 0;
 
-            foreach (Part p in ActiveVessel.parts)
+            foreach (Part p in AV.parts)
             {
                 //internal temperature
                 iPercent = p.temperature / p.maxTemp;
@@ -1153,6 +1174,7 @@ namespace KSP_YARK
             vec.y = (float)v.y;
             return vec;
         }
+
         #endregion
     }
 
