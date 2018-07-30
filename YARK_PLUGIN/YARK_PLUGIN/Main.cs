@@ -37,6 +37,7 @@ namespace KSP_YARK
             SC.HEADER_0 = 0xDE;
             SC.HEADER_1 = 0xAD;
             SC.packetType = 0x01;
+            SC.ID = 0;
 
             KD = new KSPData();
             KD.HEADER_0 = 0xDE;
@@ -72,8 +73,10 @@ namespace KSP_YARK
                             AV = FlightGlobals.ActiveVessel;
                             AV.OnPostAutopilotUpdate += AxisInput;
                             //sync some inputs on vessel switch
-                            //ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
-                            //ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
+
+                            // AV.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
+                            //AV.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
+
                             Debug.Log("KSPIO: ActiveVessel changed");
                             inFlight = true; //dont send two statusUpdate packets
                             SendNewStatus();
@@ -83,7 +86,6 @@ namespace KSP_YARK
                             AV = FlightGlobals.ActiveVessel;
                         }
                         SendKD();
-                        UpdateControls();
                     }
                     else
                     {
@@ -101,11 +103,18 @@ namespace KSP_YARK
             else if (server.Pending())
             {
                 Debug.Log("Client connected");
+                AV = new Vessel();
+                VC = new VesselControls(false);
+                VCOld = new VesselControls(false);
+
                 client = server.AcceptTcpClient();  //if a connection exists, the server will accept it
                 ns = client.GetStream(); //networkstream is used to send/receive messages
                 conn = true;
                 bool wasFlight = SceneManager.GetActiveScene().buildIndex == 7;
-                SendNewStatus();
+                if (!wasFlight)
+                {
+                    SendNewStatus();
+                }
                 TimeOFLastSend = 0;
             }
         }
@@ -115,7 +124,7 @@ namespace KSP_YARK
         }
         private void SendNewStatus()
         {
-            Debug.Log("send new status");
+            SC.ID++;
             SC.status = inFlight ? (byte)1 : (byte)0;
             char[] name = inFlight ? AV.vesselName.ToCharArray() : "null".ToCharArray();
 
@@ -146,12 +155,15 @@ namespace KSP_YARK
 
         private void SendKD()
         {
-            float time = Time.unscaledTime;
-            if ((time - TimeOFLastSend) < (1.0f / (float)(Config.UpdatesPerSecond)))
+            if (Config.UpdatesPerSecond != 0)
             {
-                return;
+                float time = Time.unscaledTime;
+                if ((time - TimeOFLastSend) < (1.0f / (float)(Config.UpdatesPerSecond)))
+                {
+                    return;
+                }
+                TimeOFLastSend = time;
             }
-            TimeOFLastSend = time;
             List<Part> ActiveEngines = new List<Part>();
             ActiveEngines = GetListOfActivatedEngines(AV);
 
@@ -219,6 +231,48 @@ namespace KSP_YARK
             KD.MNTime = 0;
             KD.MNDeltaV = 0;
 
+            KD.HasTarget = TargetExists() ? (byte)1 : (byte)0;
+
+            //mathy stuff
+            Vector3d CoM, north, up, east;
+            Quaternion rotationSurface;
+            CoM = AV.CoM;
+            up = (CoM - AV.mainBody.position).normalized;
+            north = Vector3d.Exclude(up, (AV.mainBody.position + AV.mainBody.transform.up * (float)AV.mainBody.Radius) - CoM).normalized;
+            east = Vector3d.Cross(up, north);
+
+            rotationSurface = Quaternion.LookRotation(north, up);
+
+            Vector3d attitude = Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(AV.GetTransform().rotation) * rotationSurface).eulerAngles;
+
+            KD.Roll = (float)((attitude.z > 180) ? (attitude.z - 360.0) : attitude.z);
+            KD.Pitch = (float)((attitude.x > 180) ? (360.0 - attitude.x) : -attitude.x);
+            KD.Heading = (float)attitude.y;
+
+            Vector3d prograde = new Vector3d(0, 0, 0);
+            switch (FlightGlobals.speedDisplayMode)
+            {
+                case FlightGlobals.SpeedDisplayModes.Surface:
+                    prograde = AV.srf_velocity.normalized;
+                    break;
+                case FlightGlobals.SpeedDisplayModes.Orbit:
+                    prograde = AV.obt_velocity.normalized;
+                    break;
+                case FlightGlobals.SpeedDisplayModes.Target:
+                    prograde = FlightGlobals.ship_tgtVelocity;
+                    break;
+            }
+
+            KD.Prograde = WorldVecToNavHeading(up, north, east, prograde);
+
+            if (TargetExists())
+            {
+                Vector3d targ = AV.targetObject.GetTransform().position - AV.transform.position;
+
+                KD.Target = WorldVecToNavHeading(up, north, east, targ);
+            }
+            KD.NormalHeading = WorldVecToNavHeading(up, north, east, north).Heading;
+
             if (AV.patchedConicSolver != null)
             {
                 if (AV.patchedConicSolver.maneuverNodes != null)
@@ -227,45 +281,12 @@ namespace KSP_YARK
                     {
                         KD.MNTime = (UInt32)Math.Round(AV.patchedConicSolver.maneuverNodes[0].UT - Planetarium.GetUniversalTime());
                         KD.MNDeltaV = (float)AV.patchedConicSolver.maneuverNodes[0].GetBurnVector(AV.patchedConicSolver.maneuverNodes[0].patch).magnitude; //Added JS
+
+                        KD.Maneuver = WorldVecToNavHeading(up, north, east, AV.patchedConicSolver.maneuverNodes[0].GetBurnVector(AV.patchedConicSolver.maneuverNodes[0].patch));
                     }
                 }
             }
 
-            //Debug.Log("KSPSerialIO: 5");
-
-            Vector3d CoM, north, up;
-            Quaternion rotationSurface;
-            CoM = AV.CoM;
-            up = (CoM - AV.mainBody.position).normalized;
-            north = Vector3d.Exclude(up, (AV.mainBody.position + AV.mainBody.transform.up * (float)AV.mainBody.Radius) - CoM).normalized;
-            rotationSurface = Quaternion.LookRotation(north, up);
-
-            Vector attitude = SanatizeVector(Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(AV.GetTransform().rotation) * rotationSurface).eulerAngles);
-            KD.Roll = attitude.z;
-            KD.Pitch = attitude.x;
-            KD.Heading = attitude.y;
-
-
-
-            //Vector3d prograde = (rotationSurface * AV.srf_vel_direction).normalized;
-            Vector3d prograde = AV.srf_velocity.normalized;
-            Vector3d east = Vector3d.Cross(up, north);
-            KD.Prograde.Pitch = (float)-((Vector3d.Angle(up, prograde)) - 90.0f);
-
-            Vector3d progradeFlat = Vector3d.Exclude(up, prograde);
-            float NAngle = (float)Vector3d.Angle(north, progradeFlat);
-            float EAngle = (float)Vector3d.Angle(east, progradeFlat);
-
-            if (EAngle < 90)
-            {
-                KD.Prograde.Heading = NAngle;
-            }
-            else
-            {
-                KD.Prograde.Heading = -NAngle + 360;
-            }
-            
-            
             ControlStatus((int)ActionGroups.SAS, AV.ActionGroups[KSPActionGroup.SAS]);
             ControlStatus((int)ActionGroups.RCS, AV.ActionGroups[KSPActionGroup.RCS]);
             ControlStatus((int)ActionGroups.Light, AV.ActionGroups[KSPActionGroup.Light]);
@@ -306,12 +327,8 @@ namespace KSP_YARK
             }
 
 
-            KD.NavballSASMode = (byte)(((int)FlightGlobals.speedDisplayMode + 1) << 4); //get navball speed display mode
-            if (AV.ActionGroups[KSPActionGroup.SAS])
-            {
-                KD.NavballSASMode = (byte)(((int)FlightGlobals.ActiveVessel.Autopilot.Mode + 1) | KD.NavballSASMode);
-            }
-
+            KD.SpeedMode = (byte)(FlightGlobals.speedDisplayMode + 1);
+            KD.SASMode = (AV.ActionGroups[KSPActionGroup.SAS]) ? ((byte)(FlightGlobals.ActiveVessel.Autopilot.Mode + 1)) : (byte)(0);
 
             KD.ID++;
 
@@ -437,7 +454,7 @@ namespace KSP_YARK
                 {
                     if (!AV.Autopilot.CanSetMode((VesselAutopilot.AutopilotMode)(VC.SASMode - 1)))
                     {
-                        ScreenMessages.PostScreenMessage("KSPSerialIO: SAS mode " + VC.SASMode.ToString() + " not avalible");
+                        ScreenMessages.PostScreenMessage("SAS mode " + VC.SASMode.ToString() + " not avalible");
                     }
                     else
                     {
@@ -500,6 +517,7 @@ Math.Abs(VC.Yaw) > Config.SASTol)
                 VC.Precision = BitMathByte(str.MainControls, 2);
                 VC.Abort = BitMathByte(str.MainControls, 1);
                 VC.Stage = BitMathByte(str.MainControls, 0);
+
                 VC.Pitch = (float)str.Pitch / 1000.0F;
                 VC.Roll = (float)str.Roll / 1000.0F;
                 VC.Yaw = (float)str.Yaw / 1000.0F;
@@ -509,14 +527,17 @@ Math.Abs(VC.Yaw) > Config.SASTol)
                 VC.WheelSteer = (float)str.WheelSteer / 1000.0F;
                 VC.Throttle = (float)str.Throttle / 1000.0F;
                 VC.WheelThrottle = (float)str.WheelThrottle / 1000.0F;
-                VC.SASMode = (int)str.NavballSASMode & 0x0F;
-                VC.SpeedMode = (int)(str.NavballSASMode >> 4);
+                VC.SASMode = (int)str.SASMode;
+                VC.SpeedMode = (int)str.SpeedMode;
+
+                //Debug.Log("main ctrs: " + str.MainControls);
 
                 for (int j = 1; j <= 10; j++)
                 {
                     VC.ControlGroup[j] = BitMathshort(str.ControlGroup, j);
                 }
             }
+            UpdateControls();
         }
 
         #region structsNStuff
@@ -526,18 +547,15 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public byte HEADER_0;
             public byte HEADER_1;
             public byte packetType;
+            public long ID;
             public byte status;
             public fixed byte vessalName[16]; //16 bytes
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
-        public struct Vector
-        {
-            public float x, y, z;
-        }
         public struct NavHeading
         {
-            public float Heading, Pitch;
+            public float Pitch, Heading;
             public NavHeading(float Pitch, float Heading)
             {
                 this.Pitch = Pitch;
@@ -555,11 +573,15 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public long ID;
 
             //##### CRAFT ######
-            public float Pitch;
-            public float Roll;
+            public float Pitch; //pitch and heading close together so c++ can use this as a NavHeading ptr
             public float Heading;
+            public float Roll;
 
+            //#### NAVBALL VECTOR #######
             public NavHeading Prograde;
+            public NavHeading Target;
+            public NavHeading Maneuver;
+            public float NormalHeading;
 
             public UInt16 ActionGroups; //  status bit order:SAS, RCS, Light, Gear, Brakes, Abort, Custom01 - 10 
             public float VVI;
@@ -569,6 +591,7 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public float Vsurf;
             public byte MaxOverHeat;    //  Max part overheat (% percent)
             public float IAS;           //  Indicated Air Speed
+
 
             //###### ORBITAL ######
             public float VOrbit;
@@ -611,16 +634,15 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public UInt32 MissionTime;
             public UInt32 MNTime;
             public float MNDeltaV;
+            public byte HasTarget;
             public float TargetDist;    //  Distance to targeted vessel (m)
             public float TargetV;       //  Target vessel relative velocity (m/s)
             public byte SOINumber;      //  SOI Number (decimal format: sun-planet-moon e.g. 130 = kerbin, 131 = mun)
-            public byte NavballSASMode; //  Combined byte for navball target mode and SAS mode
-                                        // First four bits indicate AutoPilot mode:
-                                        // 0 SAS is off  //1 = Regular Stability Assist //2 = Prograde
-                                        // 3 = RetroGrade //4 = Normal //5 = Antinormal //6 = Radial In
-                                        // 7 = Radial Out //8 = Target //9 = Anti-Target //10 = Maneuver node
-                                        // Last 4 bits set navball mode. (0=ignore,1=ORBIT,2=SURFACE,3=TARGET)}
+
+            public byte SASMode; //hold, prograde, retro, etc...
+            public byte SpeedMode; //Surface, orbit target
         }
+
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public struct ControlPacket
         {
@@ -639,7 +661,8 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public short WheelSteer;                   //-1000 -> 1000
             public short Throttle;                     // 0 -> 1000
             public short WheelThrottle;                // 0 -> 1000
-            public byte NavballSASMode;                //AutoPilot mode (See above for AutoPilot modes)(Ignored if the equal to zero or out of bounds (>10)) //Navball mode
+            public byte SASMode; //hold, prograde, retro, etc...
+            public byte SpeedMode; //Surface, orbit target
         };
 
         public struct VesselControls
@@ -702,15 +725,18 @@ Math.Abs(VC.Yaw) > Config.SASTol)
         #endregion
         #region UtilityFunction
 
-        private Quaternion updateHeadingPitchRollField(Vessel v)
+        private static NavHeading WorldVecToNavHeading(Vector3d up, Vector3d north, Vector3d east, Vector3d v)
         {
-            Vector3d CoM, north, up;
-            Quaternion rotationSurface;
-            CoM = v.CoM;
-            up = (CoM - v.mainBody.position).normalized;
-            north = Vector3d.Exclude(up, (v.mainBody.position + v.mainBody.transform.up * (float)v.mainBody.Radius) - CoM).normalized;
-            rotationSurface = Quaternion.LookRotation(north, up);
-            return Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(v.GetTransform().rotation) * rotationSurface);
+            NavHeading ret = new NavHeading();
+            ret.Pitch = (float)-((Vector3d.Angle(up, v)) - 90.0f);
+            Vector3d progradeFlat = Vector3d.Exclude(up, v);
+            float NAngle = (float)Vector3d.Angle(north, progradeFlat);
+            float EAngle = (float)Vector3d.Angle(east, progradeFlat);
+            if (EAngle < 90)
+                ret.Heading = NAngle;
+            else
+                ret.Heading = -NAngle + 360;
+            return ret;
         }
 
         public static List<Part> GetListOfActivatedEngines(Vessel vessel)
@@ -1164,15 +1190,6 @@ Math.Abs(VC.Yaw) > Config.SASTol)
                 KD.ActionGroups |= (UInt16)(1 << n);       // forces nth bit of x to be 1.  all other bits left alone.
             else
                 KD.ActionGroups &= (UInt16)~(1 << n);      // forces nth bit of x to be 0.  all other bits left alone.
-        }
-
-        private Vector SanatizeVector(Vector3 v)
-        {
-            Vector vec;
-            vec.z = (float)((v.z > 180) ? (v.z - 360.0) : v.z);
-            vec.x = (float)((v.x > 180) ? (360.0 - v.x) : -v.x);
-            vec.y = (float)v.y;
-            return vec;
         }
 
         #endregion
