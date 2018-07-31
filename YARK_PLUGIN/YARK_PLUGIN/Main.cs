@@ -271,7 +271,7 @@ namespace KSP_YARK
 
                 KD.Target = WorldVecToNavHeading(up, north, east, targ);
             }
-            KD.NormalHeading = WorldVecToNavHeading(up, north, east, north).Heading;
+            KD.NormalHeading = WorldVecToNavHeading(up, north, east, Vector3d.Cross(AV.obt_velocity.normalized, up)).Heading;
 
             if (AV.patchedConicSolver != null)
             {
