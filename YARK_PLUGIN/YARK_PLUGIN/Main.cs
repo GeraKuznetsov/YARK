@@ -248,7 +248,7 @@ namespace KSP_YARK
             KD.Roll = (float)((attitude.z > 180) ? (attitude.z - 360.0) : attitude.z);
             KD.Pitch = (float)((attitude.x > 180) ? (360.0 - attitude.x) : -attitude.x);
             KD.Heading = (float)attitude.y;
-
+            
             Vector3d prograde = new Vector3d(0, 0, 0);
             switch (FlightGlobals.speedDisplayMode)
             {
@@ -576,7 +576,7 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public float Pitch; //pitch and heading close together so c++ can use this as a NavHeading ptr
             public float Heading;
             public float Roll;
-
+            
             //#### NAVBALL VECTOR #######
             public NavHeading Prograde;
             public NavHeading Target;
