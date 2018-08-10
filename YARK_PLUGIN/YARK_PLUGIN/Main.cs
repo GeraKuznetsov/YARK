@@ -34,14 +34,12 @@ namespace KSP_YARK
             Debug.Log("GO");
             AV = new Vessel();
             SC = new StatusChange();
-            SC.HEADER_0 = 0xDE;
-            SC.HEADER_1 = 0xAD;
+            SC.HEADER_0 = 0xC4;
             SC.packetType = 0x01;
             SC.ID = 0;
 
             KD = new KSPData();
-            KD.HEADER_0 = 0xDE;
-            KD.HEADER_1 = 0xAD;
+            KD.HEADER_0 = 0xC4;
             KD.packetType = 0x02;
             KD.ID = 0;
 
@@ -545,7 +543,6 @@ Math.Abs(VC.Yaw) > Config.SASTol)
         public unsafe struct StatusChange
         {
             public byte HEADER_0;
-            public byte HEADER_1;
             public byte packetType;
             public long ID;
             public byte status;
@@ -568,7 +565,6 @@ Math.Abs(VC.Yaw) > Config.SASTol)
         {
             //##### HEADER ######
             public byte HEADER_0;
-            public byte HEADER_1;
             public byte packetType;
             public long ID;
 
@@ -647,7 +643,6 @@ Math.Abs(VC.Yaw) > Config.SASTol)
         public struct ControlPacket
         {
             public byte HEADER_0;
-            public byte HEADER_1;
             public long ID;
             public byte MainControls;                  //SAS RCS Lights Gear Brakes Precision Abort Stage 
             public byte Mode;                          //0 = stage, 1 = docking, 2 = map
