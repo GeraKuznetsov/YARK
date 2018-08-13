@@ -128,7 +128,6 @@ namespace KSP_YARK
 
             unsafe
             {
-
                 fixed (byte* charPtr = SC.vessalName)
                 {
                     int i = 0;
@@ -246,7 +245,7 @@ namespace KSP_YARK
             KD.Roll = (float)((attitude.z > 180) ? (attitude.z - 360.0) : attitude.z);
             KD.Pitch = (float)((attitude.x > 180) ? (360.0 - attitude.x) : -attitude.x);
             KD.Heading = (float)attitude.y;
-            
+
             Vector3d prograde = new Vector3d(0, 0, 0);
             switch (FlightGlobals.speedDisplayMode)
             {
@@ -572,7 +571,7 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public float Pitch; //pitch and heading close together so c++ can use this as a NavHeading ptr
             public float Heading;
             public float Roll;
-            
+
             //#### NAVBALL VECTOR #######
             public NavHeading Prograde;
             public NavHeading Target;
@@ -1096,55 +1095,55 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             switch (name.ToLower())
             {
                 case "sun":
-                    SOI = 100;
+                    SOI = 0;
                     break;
                 case "moho":
-                    SOI = 110;
+                    SOI = 1;
                     break;
                 case "eve":
-                    SOI = 120;
+                    SOI = 2;
                     break;
                 case "gilly":
-                    SOI = 121;
+                    SOI = 3;
                     break;
                 case "kerbin":
-                    SOI = 130;
+                    SOI = 4;
                     break;
                 case "mun":
-                    SOI = 131;
+                    SOI = 5;
                     break;
                 case "minmus":
-                    SOI = 132;
+                    SOI = 6;
                     break;
                 case "duna":
-                    SOI = 140;
+                    SOI = 7;
                     break;
                 case "ike":
-                    SOI = 141;
+                    SOI = 8;
                     break;
                 case "dres":
-                    SOI = 150;
+                    SOI = 9;
                     break;
                 case "jool":
-                    SOI = 160;
+                    SOI = 10;
                     break;
                 case "laythe":
-                    SOI = 161;
+                    SOI = 11;
                     break;
                 case "vall":
-                    SOI = 162;
+                    SOI = 12;
                     break;
                 case "tylo":
-                    SOI = 163;
+                    SOI = 13;
                     break;
                 case "bop":
-                    SOI = 164;
+                    SOI = 14;
                     break;
                 case "pol":
-                    SOI = 165;
+                    SOI = 15;
                     break;
                 case "eeloo":
-                    SOI = 170;
+                    SOI = 16;
                     break;
                 default:
                     SOI = 0;
