@@ -56,6 +56,7 @@ namespace KSP_YARK
             {
                 if (!client.Connected)
                 {
+                                        AV.OnPostAutopilotUpdate -= AxisInput;
                     Debug.Log("Client disconnected");
                     conn = false;
                 }
@@ -152,15 +153,14 @@ namespace KSP_YARK
 
         private void SendKD()
         {
-            if (Config.UpdatesPerSecond != 0)
+            float time = Time.unscaledTime;
+            KD.deltaTime = time - TimeOFLastSend;
+            TimeOFLastSend = time;
+            if (Config.UpdatesPerSecond != 0 && ((KD.deltaTime) < (1.0f / (float)(Config.UpdatesPerSecond))))
             {
-                float time = Time.unscaledTime;
-                if ((time - TimeOFLastSend) < (1.0f / (float)(Config.UpdatesPerSecond)))
-                {
-                    return;
-                }
-                TimeOFLastSend = time;
+                return;
             }
+
             List<Part> ActiveEngines = new List<Part>();
             ActiveEngines = GetListOfActivatedEngines(AV);
 
@@ -227,6 +227,8 @@ namespace KSP_YARK
 
             KD.MNTime = 0;
             KD.MNDeltaV = 0;
+            KD.TargetDist = 0;
+            KD.TargetV = 0;
 
             KD.HasTarget = TargetExists() ? (byte)1 : (byte)0;
 
@@ -264,11 +266,12 @@ namespace KSP_YARK
 
             if (TargetExists())
             {
-                Vector3d targ = AV.targetObject.GetTransform().position - AV.transform.position;
+                KD.Target = WorldVecToNavHeading(up, north, east, AV.targetObject.GetTransform().position - AV.transform.position);
+                KD.TargetDist = (float)Vector3.Distance(FlightGlobals.fetch.VesselTarget.GetVessel().transform.position, AV.transform.position);
+                KD.TargetV = (float)FlightGlobals.ship_tgtVelocity.magnitude;
 
-                KD.Target = WorldVecToNavHeading(up, north, east, targ);
             }
-            KD.NormalHeading = WorldVecToNavHeading(up, north, east, Vector3d.Cross(AV.obt_velocity.normalized, up)).Heading;
+            //KD.NormalHeading = WorldVecToNavHeading(up, north, east, Vector3d.Cross(AV.obt_velocity.normalized, up)).Heading;
 
             if (AV.patchedConicSolver != null)
             {
@@ -311,18 +314,6 @@ namespace KSP_YARK
 
             KD.CurrentStage = (byte)StageManager.CurrentStage;
             KD.TotalStage = (byte)StageManager.StageCount;
-
-            //target distance and velocity stuff                    
-
-            KD.TargetDist = 0;
-            KD.TargetV = 0;
-
-            if (TargetExists())
-            {
-                KD.TargetDist = (float)Vector3.Distance(FlightGlobals.fetch.VesselTarget.GetVessel().transform.position, AV.transform.position);
-                KD.TargetV = (float)FlightGlobals.ship_tgtVelocity.magnitude;
-            }
-
 
             KD.SpeedMode = (byte)(FlightGlobals.speedDisplayMode + 1);
             KD.SASMode = (AV.ActionGroups[KSPActionGroup.SAS]) ? ((byte)(FlightGlobals.ActiveVessel.Autopilot.Mode + 1)) : (byte)(0);
@@ -567,6 +558,8 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public byte packetType;
             public long ID;
 
+            public float deltaTime;
+
             //##### CRAFT ######
             public float Pitch; //pitch and heading close together so c++ can use this as a NavHeading ptr
             public float Heading;
@@ -576,7 +569,6 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public NavHeading Prograde;
             public NavHeading Target;
             public NavHeading Maneuver;
-            public float NormalHeading;
 
             public UInt16 ActionGroups; //  status bit order:SAS, RCS, Light, Gear, Brakes, Abort, Custom01 - 10 
             public float VVI;
@@ -918,6 +910,10 @@ Math.Abs(VC.Yaw) > Config.SASTol)
 
         private void AxisInput(FlightCtrlState s)
         {
+            if (!conn)
+            {
+                return;
+            }
             switch (Config.ThrottleEnable)
             {
                 case 1:
