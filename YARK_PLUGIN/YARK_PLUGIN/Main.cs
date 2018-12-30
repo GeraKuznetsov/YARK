@@ -56,7 +56,7 @@ namespace KSP_YARK
             {
                 if (!client.Connected)
                 {
-                                        AV.OnPostAutopilotUpdate -= AxisInput;
+                    AV.OnPostAutopilotUpdate -= AxisInput;
                     Debug.Log("Client disconnected");
                     conn = false;
                 }
@@ -238,11 +238,16 @@ namespace KSP_YARK
             CoM = AV.CoM;
             up = (CoM - AV.mainBody.position).normalized;
             north = Vector3d.Exclude(up, (AV.mainBody.position + AV.mainBody.transform.up * (float)AV.mainBody.Radius) - CoM).normalized;
+
             east = Vector3d.Cross(up, north);
 
             rotationSurface = Quaternion.LookRotation(north, up);
 
             Vector3d attitude = Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(AV.GetTransform().rotation) * rotationSurface).eulerAngles;
+
+            Vector3d ang_vel = (Quaternion.Euler(AV.angularVelocity) * Quaternion.LookRotation(AV.velocityD, up)).eulerAngles;
+            Debug.LogFormat("{0:000.0000} , {1:000.0000} , {2:000.0000}", ang_vel.x, ang_vel.y, ang_vel.z);
+            //Debug.Log(ang_vel.ToString());
 
             KD.Roll = (float)((attitude.z > 180) ? (attitude.z - 360.0) : attitude.z);
             KD.Pitch = (float)((attitude.x > 180) ? (360.0 - attitude.x) : -attitude.x);
@@ -564,6 +569,9 @@ Math.Abs(VC.Yaw) > Config.SASTol)
             public float Pitch; //pitch and heading close together so c++ can use this as a NavHeading ptr
             public float Heading;
             public float Roll;
+            //  public float dPitch;
+            //  public float dHeading;
+            //  public float dRoll;
 
             //#### NAVBALL VECTOR #######
             public NavHeading Prograde;
