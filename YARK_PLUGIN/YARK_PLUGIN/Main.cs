@@ -31,7 +31,7 @@ namespace KSP_YARK
         {
             TempR = new IOResource();
             DontDestroyOnLoad(gameObject);
-            Debug.Log("GO");
+            Debug.Log("Starting YARK KSPWebsockIO");
             AV = new Vessel();
             SC = new StatusChange();
             SC.HEADER_0 = 0xC4;
@@ -57,7 +57,7 @@ namespace KSP_YARK
                 if (!client.Connected)
                 {
                     AV.OnPostAutopilotUpdate -= AxisInput;
-                    Debug.Log("Client disconnected");
+                    Debug.Log("YARK: Client disconnected");
                     conn = false;
                 }
                 else
@@ -76,7 +76,7 @@ namespace KSP_YARK
                             // AV.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
                             //AV.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
 
-                            Debug.Log("KSPIO: ActiveVessel changed");
+                            Debug.Log("YARK: ActiveVessel changed");
                             inFlight = true; //dont send two statusUpdate packets
                             SendNewStatus();
                         }
@@ -90,7 +90,6 @@ namespace KSP_YARK
                     {
                         if (inFlight)
                         {
-                            Debug.Log("left flight");
                             inFlight = false;
                             SendNewStatus();
                             AV = new Vessel();
@@ -101,7 +100,7 @@ namespace KSP_YARK
             }
             else if (server.Pending())
             {
-                Debug.Log("Client connected");
+                Debug.Log("YARK: Client connected");
                 AV = new Vessel();
                 VC = new VesselControls(false);
                 VCOld = new VesselControls(false);
@@ -119,7 +118,7 @@ namespace KSP_YARK
         }
         public void OnDisable()
         {
-            Debug.Log("STOP");
+            Debug.Log("YARK: STOP");
         }
         private void SendNewStatus()
         {
@@ -244,10 +243,6 @@ namespace KSP_YARK
             rotationSurface = Quaternion.LookRotation(north, up);
 
             Vector3d attitude = Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(AV.GetTransform().rotation) * rotationSurface).eulerAngles;
-
-            Vector3d ang_vel = (Quaternion.Euler(AV.angularVelocity) * Quaternion.LookRotation(AV.velocityD, up)).eulerAngles;
-            Debug.LogFormat("{0:000.0000} , {1:000.0000} , {2:000.0000}", ang_vel.x, ang_vel.y, ang_vel.z);
-            //Debug.Log(ang_vel.ToString());
 
             KD.Roll = (float)((attitude.z > 180) ? (attitude.z - 360.0) : attitude.z);
             KD.Pitch = (float)((attitude.x > 180) ? (360.0 - attitude.x) : -attitude.x);
@@ -467,9 +462,7 @@ namespace KSP_YARK
                 VCOld.SpeedMode = VC.SpeedMode;
             }
 
-            if (Math.Abs(VC.Pitch) > Config.SASTol ||
-Math.Abs(VC.Roll) > Config.SASTol ||
-Math.Abs(VC.Yaw) > Config.SASTol)
+            if (Math.Abs(VC.Pitch) > Config.SASTol || Math.Abs(VC.Roll) > Config.SASTol || Math.Abs(VC.Yaw) > Config.SASTol)
             {
                 if ((AV.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
                 {
@@ -502,32 +495,39 @@ Math.Abs(VC.Yaw) > Config.SASTol)
                 str = (ControlPacket)Marshal.PtrToStructure(ptr, str.GetType());
                 Marshal.FreeHGlobal(ptr);
 
-                VC.SAS = BitMathByte(str.MainControls, 7);
-                VC.RCS = BitMathByte(str.MainControls, 6);
-                VC.Lights = BitMathByte(str.MainControls, 5);
-                VC.Gear = BitMathByte(str.MainControls, 4);
-                VC.Brakes = BitMathByte(str.MainControls, 3);
-                VC.Precision = BitMathByte(str.MainControls, 2);
-                VC.Abort = BitMathByte(str.MainControls, 1);
-                VC.Stage = BitMathByte(str.MainControls, 0);
-
-                VC.Pitch = (float)str.Pitch / 1000.0F;
-                VC.Roll = (float)str.Roll / 1000.0F;
-                VC.Yaw = (float)str.Yaw / 1000.0F;
-                VC.TX = (float)str.TX / 1000.0F;
-                VC.TY = (float)str.TY / 1000.0F;
-                VC.TZ = (float)str.TZ / 1000.0F;
-                VC.WheelSteer = (float)str.WheelSteer / 1000.0F;
-                VC.Throttle = (float)str.Throttle / 1000.0F;
-                VC.WheelThrottle = (float)str.WheelThrottle / 1000.0F;
-                VC.SASMode = (int)str.SASMode;
-                VC.SpeedMode = (int)str.SpeedMode;
-
-                //Debug.Log("main ctrs: " + str.MainControls);
-
-                for (int j = 1; j <= 10; j++)
+                if (str.HEADER_0 == 0xC4)
                 {
-                    VC.ControlGroup[j] = BitMathshort(str.ControlGroup, j);
+                    VC.SAS = BitMathByte(str.MainControls, 7);
+                    VC.RCS = BitMathByte(str.MainControls, 6);
+                    VC.Lights = BitMathByte(str.MainControls, 5);
+                    VC.Gear = BitMathByte(str.MainControls, 4);
+                    VC.Brakes = BitMathByte(str.MainControls, 3);
+                    VC.Precision = BitMathByte(str.MainControls, 2);
+                    VC.Abort = BitMathByte(str.MainControls, 1);
+                    VC.Stage = BitMathByte(str.MainControls, 0);
+
+                    VC.Pitch = (float)str.Pitch / 1000.0F;
+                    VC.Roll = (float)str.Roll / 1000.0F;
+                    VC.Yaw = (float)str.Yaw / 1000.0F;
+                    VC.TX = (float)str.TX / 1000.0F;
+                    VC.TY = (float)str.TY / 1000.0F;
+                    VC.TZ = (float)str.TZ / 1000.0F;
+                    VC.WheelSteer = (float)str.WheelSteer / 1000.0F;
+                    VC.Throttle = (float)str.Throttle / 1000.0F;
+                    VC.WheelThrottle = (float)str.WheelThrottle / 1000.0F;
+                    VC.SASMode = (int)str.SASMode;
+                    VC.SpeedMode = (int)str.SpeedMode;
+
+                    //Debug.Log("main ctrs: " + str.MainControls);
+
+                    for (int j = 1; j <= 10; j++)
+                    {
+                        VC.ControlGroup[j] = BitMathshort(str.ControlGroup, j);
+                    }
+                }
+                else
+                {
+                    Debug.Log("YARK: server recieved malformed packet");
                 }
             }
             UpdateControls();
