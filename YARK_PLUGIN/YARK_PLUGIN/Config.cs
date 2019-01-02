@@ -31,19 +31,23 @@ namespace KSP_YARK
         {
             cfg = PluginConfiguration.CreateForType<Config>();
             cfg.load();
-            TCPPort = cfg.GetValue<int>("TCPPort");
-            UpdatesPerSecond = cfg.GetValue<int>("UpdatesPerSecond");
-            PitchEnable = cfg.GetValue<int>("PitchEnable");
-            RollEnable = cfg.GetValue<int>("RollEnable");
-            YawEnable = cfg.GetValue<int>("YawEnable");
-            TXEnable = cfg.GetValue<int>("TXEnable");
-            TYEnable = cfg.GetValue<int>("TYEnable");
-            TZEnable = cfg.GetValue<int>("TZEnable");
-            WheelSteerEnable = cfg.GetValue<int>("WheelSteerEnable");
-            ThrottleEnable = cfg.GetValue<int>("ThrottleEnable");
-            WheelThrottleEnable = cfg.GetValue<int>("WheelThrottleEnable");
-            SASTol = cfg.GetValue<double>("SASTol");
+            TCPPort = cfg.GetValue<int>("TCPPort" , 9999);
+            UpdatesPerSecond = cfg.GetValue<int>("UpdatesPerSecond" , 0);
+            PitchEnable = cfg.GetValue<int>("PitchEnable" , 2);
+            RollEnable = cfg.GetValue<int>("RollEnable" , 2);
+            YawEnable = cfg.GetValue<int>("YawEnable" , 2);
+            TXEnable = cfg.GetValue<int>("TXEnable", 2);
+            TYEnable = cfg.GetValue<int>("TYEnable", 2);
+            TZEnable = cfg.GetValue<int>("TZEnable", 2);
+            WheelSteerEnable = cfg.GetValue<int>("WheelSteerEnable" , 2);
+            ThrottleEnable = cfg.GetValue<int>("ThrottleEnable" , 2);
+            WheelThrottleEnable = cfg.GetValue<int>("WheelThrottleEnable" , 2);
+            SASTol = cfg.GetValue<double>("SASTol", 0.05);
         }
 
+        public void OnDisable()
+        {
+            cfg.save();
+        }
     }
 }

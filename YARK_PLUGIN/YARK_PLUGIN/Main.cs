@@ -4,10 +4,8 @@ using System.Runtime.InteropServices;
 using System.Net;
 using System.Net.Sockets;
 using UnityEngine.SceneManagement;
-using KSP;
 using System.Collections.Generic;
 using KSP.UI.Screens;
-using KSP.UI.Screens.Flight;
 
 namespace KSP_YARK
 {
@@ -23,25 +21,31 @@ namespace KSP_YARK
         VesselControls VC, VCOld;
         bool inFlight;
         public static Vessel AV;
+        Vector3d CoM, north, up, east;
         IOResource TempR;
-        Boolean wasSASOn = false;
+        Boolean wasSASOn = false, forceSASMode = false;
+        int lastSASMode = 1;
         float TimeOFLastSend;
 
         public void Awake()
         {
             TempR = new IOResource();
             DontDestroyOnLoad(gameObject);
-            Debug.Log("Starting YARK KSPWebsockIO");
+            msg("Starting YARK KSPWebsockIO");
             AV = new Vessel();
-            SC = new StatusChange();
-            SC.HEADER_0 = 0xC4;
-            SC.packetType = 0x01;
-            SC.ID = 0;
+            SC = new StatusChange
+            {
+                HEADER_0 = 0xC4,
+                packetType = 0x01,
+                ID = 0
+            };
 
-            KD = new KSPData();
-            KD.HEADER_0 = 0xC4;
-            KD.packetType = 0x02;
-            KD.ID = 0;
+            KD = new KSPData
+            {
+                HEADER_0 = 0xC4,
+                packetType = 0x02,
+                ID = 0
+            };
 
             VC = new VesselControls(false);
             VCOld = new VesselControls(false);
@@ -50,20 +54,28 @@ namespace KSP_YARK
             server.Start();
             conn = false;
         }
+
+
         public void Update()
         {
+            if (forceSASMode)
+            {
+                forceSASMode = false;
+                SetSASMode(lastSASMode);
+            }
             if (conn)
             {
                 if (!client.Connected)
                 {
                     AV.OnPostAutopilotUpdate -= AxisInput;
-                    Debug.Log("YARK: Client disconnected");
+                    msg("YARK: Client disconnected");
                     conn = false;
                 }
                 else
                 {
                     if (SceneManager.GetActiveScene().buildIndex == 7)
                     {
+
                         //If the current active vessel is not what we were using, we need to remove controls from the old 
                         //vessel and attache it to the current one
                         if (AV.id != FlightGlobals.ActiveVessel.id)
@@ -76,7 +88,7 @@ namespace KSP_YARK
                             // AV.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
                             //AV.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
 
-                            Debug.Log("YARK: ActiveVessel changed");
+                            msg("YARK: ActiveVessel changed");
                             inFlight = true; //dont send two statusUpdate packets
                             SendNewStatus();
                         }
@@ -100,7 +112,7 @@ namespace KSP_YARK
             }
             else if (server.Pending())
             {
-                Debug.Log("YARK: Client connected");
+                msg("YARK: Client connected");
                 AV = new Vessel();
                 VC = new VesselControls(false);
                 VCOld = new VesselControls(false);
@@ -116,10 +128,10 @@ namespace KSP_YARK
                 TimeOFLastSend = 0;
             }
         }
-        public void OnDisable()
-        {
-            Debug.Log("YARK: STOP");
-        }
+        /*  public void OnDisable()
+          {
+              msg("YARK: stopping");
+          }*/
         private void SendNewStatus()
         {
             SC.ID++;
@@ -232,7 +244,6 @@ namespace KSP_YARK
             KD.HasTarget = TargetExists() ? (byte)1 : (byte)0;
 
             //mathy stuff
-            Vector3d CoM, north, up, east;
             Quaternion rotationSurface;
             CoM = AV.CoM;
             up = (CoM - AV.mainBody.position).normalized;
@@ -316,7 +327,13 @@ namespace KSP_YARK
             KD.TotalStage = (byte)StageManager.StageCount;
 
             KD.SpeedMode = (byte)(FlightGlobals.speedDisplayMode + 1);
-            KD.SASMode = (AV.ActionGroups[KSPActionGroup.SAS]) ? ((byte)(FlightGlobals.ActiveVessel.Autopilot.Mode + 1)) : (byte)(0);
+            KD.SASMode = GetSASMode();
+
+            KD.timeWarpRateIndex = (byte)TimeWarp.CurrentRateIndex;
+            if (KD.timeWarpRateIndex != 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH)
+            {
+                KD.timeWarpRateIndex += 3;
+            }
 
             KD.ID++;
 
@@ -334,6 +351,7 @@ namespace KSP_YARK
 
         private void UpdateControls()
         {
+
             if (VC.RCS != VCOld.RCS)
             {
                 AV.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
@@ -435,19 +453,32 @@ namespace KSP_YARK
                 VCOld.ControlGroup[10] = VC.ControlGroup[10];
             }
 
+            //Set TimeWarp rate
+            if (VC.timeWarpRateIndex != VCOld.timeWarpRateIndex)
+            {
+                byte mode = VC.timeWarpRateIndex;
+                if (mode >= 0 && mode <= 10)
+                {
+                    if (mode > 3)
+                    {
+                        TimeWarp.fetch.Mode = TimeWarp.Modes.HIGH;
+                        TimeWarp.SetRate(mode - 3, false);
+                    }
+                    else
+                    {
+                        TimeWarp.fetch.Mode = TimeWarp.Modes.LOW;
+                        TimeWarp.SetRate(mode, false);
+                    }
+                }
+                VCOld.timeWarpRateIndex = VC.timeWarpRateIndex;
+            }
+
             //Set sas mode
             if (VC.SASMode != VCOld.SASMode)
             {
                 if (VC.SASMode != 0 && VC.SASMode < 11)
                 {
-                    if (!AV.Autopilot.CanSetMode((VesselAutopilot.AutopilotMode)(VC.SASMode - 1)))
-                    {
-                        ScreenMessages.PostScreenMessage("SAS mode " + VC.SASMode.ToString() + " not avalible");
-                    }
-                    else
-                    {
-                        AV.Autopilot.SetMode((VesselAutopilot.AutopilotMode)VC.SASMode - 1);
-                    }
+                    SetSASMode(VC.SASMode);
                 }
                 VCOld.SASMode = VC.SASMode;
             }
@@ -467,6 +498,7 @@ namespace KSP_YARK
                 if ((AV.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
                 {
                     wasSASOn = true;
+                    lastSASMode = GetSASMode();
                     AV.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
                 }
             }
@@ -476,9 +508,25 @@ namespace KSP_YARK
                 {
                     wasSASOn = false;
                     AV.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
+                    forceSASMode = true;
+                    //SetSASMode(lastSASMode);
                 }
             }
 
+            if (VC.holdTargetVector)
+            {
+                Quaternion relativeOrientation = Quaternion.identity * Quaternion.Euler((-VC.targetHeading + 90) * new Vector3(1, 0, 0));
+                relativeOrientation = relativeOrientation * Quaternion.Euler((VC.targetPitch) * new Vector3(0, 0, 1));
+                relativeOrientation = relativeOrientation * Quaternion.Euler((VC.targetRoll + 90) * new Vector3(0, 1, 0));
+
+                Quaternion goalOrientation = Quaternion.LookRotation(north, east) * relativeOrientation;
+
+                Quaternion currentOrientation = FlightGlobals.ActiveVessel.Autopilot.SAS.lockedRotation;
+                float delta = Quaternion.Angle(goalOrientation, currentOrientation);
+                // float slerp = (float)Math.Pow(delta / 90f, 4) * 0.02f;
+                float slerp = delta / 90f * 0.02f;
+                FlightGlobals.ActiveVessel.Autopilot.SAS.LockRotation(Quaternion.Slerp(currentOrientation, goalOrientation, slerp));
+            }
         }
 
         private void ServerReceive()
@@ -515,8 +563,24 @@ namespace KSP_YARK
                     VC.WheelSteer = (float)str.WheelSteer / 1000.0F;
                     VC.Throttle = (float)str.Throttle / 1000.0F;
                     VC.WheelThrottle = (float)str.WheelThrottle / 1000.0F;
-                    VC.SASMode = (int)str.SASMode;
+
+                    if ((int)str.SASMode == 11)
+                    {
+                        VC.SASMode = 1;
+                        VC.holdTargetVector = true;
+                    }
+                    else
+                    {
+                        VC.SASMode = (int)str.SASMode;
+                        VC.holdTargetVector = false;
+                    }
                     VC.SpeedMode = (int)str.SpeedMode;
+
+                    VC.targetHeading = str.targetHeading;
+                    VC.targetPitch = str.targetPitch;
+                    VC.targetRoll = str.targetRoll;
+
+                    VC.timeWarpRateIndex = str.timeWarpRateIndex;
 
                     //Debug.Log("main ctrs: " + str.MainControls);
 
@@ -636,6 +700,8 @@ namespace KSP_YARK
 
             public byte SASMode; //hold, prograde, retro, etc...
             public byte SpeedMode; //Surface, orbit target
+
+            public byte timeWarpRateIndex;
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -657,6 +723,8 @@ namespace KSP_YARK
             public short WheelThrottle;                // 0 -> 1000
             public byte SASMode; //hold, prograde, retro, etc...
             public byte SpeedMode; //Surface, orbit target
+            public float targetHeading, targetPitch, targetRoll;
+            public byte timeWarpRateIndex;
         };
 
         public struct VesselControls
@@ -682,12 +750,16 @@ namespace KSP_YARK
             public float WheelSteer;
             public float Throttle;
             public float WheelThrottle;
+            public float targetHeading, targetPitch, targetRoll;
+            public Boolean holdTargetVector;
+            public byte timeWarpRateIndex;
             public VesselControls(bool ignore)
             {
-                SAS = RCS = Lights = Gear = Brakes = Precision = Abort = Stage = false;
+                holdTargetVector = SAS = RCS = Lights = Gear = Brakes = Precision = Abort = Stage = false;
                 Mode = SASMode = SpeedMode = 0;
+                timeWarpRateIndex = 1;
                 ControlGroup = new Boolean[11];
-                Pitch = Roll = Yaw = TX = TY = TZ = WheelSteer = Throttle = WheelThrottle = 0;
+                targetHeading = targetPitch = targetRoll = Pitch = Roll = Yaw = TX = TY = TZ = WheelSteer = Throttle = WheelThrottle = 0;
             }
         };
 
@@ -717,12 +789,36 @@ namespace KSP_YARK
             public float Current;
         }
         #endregion
+
         #region UtilityFunction
+
+        private void msg(string msg)
+        {
+            ScreenMessages.PostScreenMessage(msg);
+            Debug.Log(msg);
+        }
+
+        private byte GetSASMode()
+        {
+            return (AV.ActionGroups[KSPActionGroup.SAS]) ? ((byte)(FlightGlobals.ActiveVessel.Autopilot.Mode + 1)) : (byte)(0);
+        }
+
+        private void SetSASMode(int mode)
+        {
+            if (!AV.Autopilot.CanSetMode((VesselAutopilot.AutopilotMode)(mode - 1)))
+            {
+                ScreenMessages.PostScreenMessage("SAS mode " + mode.ToString() + " not avalible");
+            }
+            else
+            {
+                AV.Autopilot.SetMode((VesselAutopilot.AutopilotMode)(mode - 1));
+            }
+        }
 
         private static NavHeading WorldVecToNavHeading(Vector3d up, Vector3d north, Vector3d east, Vector3d v)
         {
             NavHeading ret = new NavHeading();
-            ret.Pitch = (float)-((Vector3d.Angle(up, v)) - 90.0f);
+            ret.Pitch = (float)-(Vector3d.Angle(up, v) - 90.0f);
             Vector3d progradeFlat = Vector3d.Exclude(up, v);
             float NAngle = (float)Vector3d.Angle(north, progradeFlat);
             float EAngle = (float)Vector3d.Angle(east, progradeFlat);
@@ -943,61 +1039,60 @@ namespace KSP_YARK
                     break;
             }
 
-            switch (Config.PitchEnable)
+            if (!VC.holdTargetVector)
             {
-                case 1:
-                    s.pitch = VC.Pitch;
-                    break;
-                case 2:
-                    if (s.pitch == 0)
+                switch (Config.PitchEnable)
+                {
+                    case 1:
                         s.pitch = VC.Pitch;
-                    break;
-                case 3:
-                    if (VC.Pitch != 0)
-                        s.pitch = VC.Pitch;
-                    break;
-                default:
-                    break;
+                        break;
+                    case 2:
+                        if (s.pitch == 0)
+                            s.pitch = VC.Pitch;
+                        break;
+                    case 3:
+                        if (VC.Pitch != 0)
+                            s.pitch = VC.Pitch;
+                        break;
+                    default:
+                        break;
+                }
+
+                switch (Config.RollEnable)
+                {
+                    case 1:
+                        s.roll = VC.Roll;
+                        break;
+                    case 2:
+                        if (s.roll == 0)
+                            s.roll = VC.Roll;
+                        break;
+                    case 3:
+                        if (VC.Roll != 0)
+                            s.roll = VC.Roll;
+                        break;
+                    default:
+                        break;
+                }
+
+                switch (Config.YawEnable)
+                {
+                    case 1:
+                        s.yaw = VC.Yaw;
+                        break;
+                    case 2:
+                        if (s.yaw == 0)
+                            s.yaw = VC.Yaw;
+                        break;
+                    case 3:
+                        if (VC.Yaw != 0)
+                            s.yaw = VC.Yaw;
+                        break;
+                    default:
+                        break;
+                }
             }
 
-            switch (Config.RollEnable)
-            {
-                case 1:
-                    s.roll = VC.Roll;
-                    break;
-                case 2:
-                    if (s.roll == 0)
-                        s.roll = VC.Roll;
-                    break;
-                case 3:
-                    if (VC.Roll != 0)
-                        s.roll = VC.Roll;
-                    break;
-                default:
-                    break;
-            }
-
-            switch (Config.YawEnable)
-            {
-                case 1:
-                    s.yaw = VC.Yaw;
-                    break;
-                case 2:
-                    if (s.yaw == 0)
-                        s.yaw = VC.Yaw;
-                    break;
-                case 3:
-                    if (VC.Yaw != 0)
-                        s.yaw = VC.Yaw;
-                    break;
-                default:
-                    break;
-            }
-            /*
-            if (ActiveVessel.Autopilot.SAS.lockedMode == true)
-            {
-            }
-            */
             switch (Config.TXEnable)
             {
                 case 1:
@@ -1192,6 +1287,4 @@ namespace KSP_YARK
 
         #endregion
     }
-
-
 }
