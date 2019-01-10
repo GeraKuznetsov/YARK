@@ -6,6 +6,8 @@ using System.Net.Sockets;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
 using KSP.UI.Screens;
+using System.Net.NetworkInformation;
+using System.Linq;
 
 namespace KSP_YARK
 {
@@ -19,20 +21,21 @@ namespace KSP_YARK
         KSPData KD;
         StatusChange SC;
         VesselControls VC, VCOld;
-        bool inFlight;
+        bool inFlight, virginConection;
         public static Vessel AV;
         Vector3d CoM, north, up, east;
         IOResource TempR;
-        Boolean wasSASOn = false, forceSASMode = false;
+        Boolean wasSASOn = false, forceSASMode = false, newDataRec = false;
         int lastSASMode = 1;
         float TimeOFLastSend;
+        UInt32 currentTime, lastTime;
 
         public void Awake()
         {
             TempR = new IOResource();
             DontDestroyOnLoad(gameObject);
             msg("Starting YARK KSPWebsockIO");
-            AV = new Vessel();
+
             SC = new StatusChange
             {
                 HEADER_0 = 0xC4,
@@ -47,14 +50,10 @@ namespace KSP_YARK
                 ID = 0
             };
 
-            VC = new VesselControls(false);
-            VCOld = new VesselControls(false);
-
             server = new TcpListener(IPAddress.Any, Config.TCPPort);
             server.Start();
             conn = false;
         }
-
 
         public void Update()
         {
@@ -65,46 +64,61 @@ namespace KSP_YARK
             }
             if (conn)
             {
-                if (!client.Connected)
+                if (!client.Connected) //TODO: IMPLEMENT TIMEOUT       
                 {
-                    AV.OnPostAutopilotUpdate -= AxisInput;
+                    if (AV != null)
+                    {
+                        AV.OnPostAutopilotUpdate -= AxisInput;
+                    }
                     msg("YARK: Client disconnected");
                     conn = false;
                 }
                 else
                 {
-                    if (SceneManager.GetActiveScene().buildIndex == 7)
+                    if (SceneManager.GetActiveScene().buildIndex == 7) //in flight?
                     {
-
-                        //If the current active vessel is not what we were using, we need to remove controls from the old 
-                        //vessel and attache it to the current one
-                        if (AV.id != FlightGlobals.ActiveVessel.id)
+                        currentTime = (UInt32)Planetarium.GetUniversalTime();
+                        if (virginConection || !inFlight || AV.id != FlightGlobals.ActiveVessel.id || lastTime > currentTime)
                         {
-                            AV.OnPostAutopilotUpdate -= AxisInput;
+                            virginConection = false;
+                            if (AV != null)
+                            {
+                                AV.OnPostAutopilotUpdate -= AxisInput;
+                            }
                             AV = FlightGlobals.ActiveVessel;
                             AV.OnPostAutopilotUpdate += AxisInput;
-                            //sync some inputs on vessel switch
 
-                            // AV.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
-                            //AV.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
+                            //sync inputs on vessel switch
+                            ControlPacket cp = new ControlPacket
+                            {
+                                MainControls = CalcMainControls(),
+                                ActionGroups = CalcActionGroups(),
+                                SASMode = GetSASMode(),
+                                SpeedMode = (byte)(FlightGlobals.speedDisplayMode + 1),
+                                timeWarpRateIndex = GetTimeWarpIndex()
+                            };
+                            cp.targetHeading = cp.targetPitch = cp.targetRoll = cp.WheelSteer = cp.WheelThrottle = cp.Throttle = cp.Pitch = cp.Roll = cp.Yaw = cp.TX = cp.TY = cp.TZ;
+                            VC = VCOld = CPToVC(cp);
 
-                            msg("YARK: ActiveVessel changed");
-                            inFlight = true; //dont send two statusUpdate packets
+                            msg("YARK: vessal resync");
+                            inFlight = true;
                             SendNewStatus();
                         }
-                        else
-                        {
-                            AV = FlightGlobals.ActiveVessel;
-                        }
+                        lastTime = currentTime;
                         SendKD();
+                        if (newDataRec)
+                        {
+                            UpdateControls();
+                            newDataRec = false;
+                        }
                     }
                     else
                     {
-                        if (inFlight)
+                        if (virginConection || inFlight)
                         {
+                            virginConection = false;
                             inFlight = false;
                             SendNewStatus();
-                            AV = new Vessel();
                         }
                     }
                     ServerReceive();
@@ -113,25 +127,24 @@ namespace KSP_YARK
             else if (server.Pending())
             {
                 msg("YARK: Client connected");
-                AV = new Vessel();
-                VC = new VesselControls(false);
-                VCOld = new VesselControls(false);
 
-                client = server.AcceptTcpClient();  //if a connection exists, the server will accept it
-                ns = client.GetStream(); //networkstream is used to send/receive messages
+                //VC = new VesselControls(false);
+                //VCOld = new VesselControls(false);
+
+                client = server.AcceptTcpClient();
+                ns = client.GetStream();
                 conn = true;
-                bool wasFlight = SceneManager.GetActiveScene().buildIndex == 7;
-                if (!wasFlight)
-                {
-                    SendNewStatus();
-                }
-                TimeOFLastSend = 0;
+                virginConection = true;
+                newDataRec = false;
+                TimeOFLastSend = Time.unscaledTime;
+                lastTime = 0;
             }
         }
         /*  public void OnDisable()
           {
               msg("YARK: stopping");
           }*/
+
         private void SendNewStatus()
         {
             SC.ID++;
@@ -188,7 +201,6 @@ namespace KSP_YARK
             KD.TrueAnomaly = (float)AV.orbit.trueAnomaly;
             KD.period = (int)Math.Round(AV.orbit.period);
 
-            //Debug.Log("KSPSerialIO: 3");
             double ASL = AV.mainBody.GetAltitude(AV.CoM);
             double AGL = (ASL - AV.terrainAltitude);
 
@@ -298,22 +310,9 @@ namespace KSP_YARK
                 }
             }
 
-            ControlStatus((int)ActionGroups.SAS, AV.ActionGroups[KSPActionGroup.SAS]);
-            ControlStatus((int)ActionGroups.RCS, AV.ActionGroups[KSPActionGroup.RCS]);
-            ControlStatus((int)ActionGroups.Light, AV.ActionGroups[KSPActionGroup.Light]);
-            ControlStatus((int)ActionGroups.Gear, AV.ActionGroups[KSPActionGroup.Gear]);
-            ControlStatus((int)ActionGroups.Brakes, AV.ActionGroups[KSPActionGroup.Brakes]);
-            ControlStatus((int)ActionGroups.Abort, AV.ActionGroups[KSPActionGroup.Abort]);
-            ControlStatus((int)ActionGroups.Custom01, AV.ActionGroups[KSPActionGroup.Custom01]);
-            ControlStatus((int)ActionGroups.Custom02, AV.ActionGroups[KSPActionGroup.Custom02]);
-            ControlStatus((int)ActionGroups.Custom03, AV.ActionGroups[KSPActionGroup.Custom03]);
-            ControlStatus((int)ActionGroups.Custom04, AV.ActionGroups[KSPActionGroup.Custom04]);
-            ControlStatus((int)ActionGroups.Custom05, AV.ActionGroups[KSPActionGroup.Custom05]);
-            ControlStatus((int)ActionGroups.Custom06, AV.ActionGroups[KSPActionGroup.Custom06]);
-            ControlStatus((int)ActionGroups.Custom07, AV.ActionGroups[KSPActionGroup.Custom07]);
-            ControlStatus((int)ActionGroups.Custom08, AV.ActionGroups[KSPActionGroup.Custom08]);
-            ControlStatus((int)ActionGroups.Custom09, AV.ActionGroups[KSPActionGroup.Custom09]);
-            ControlStatus((int)ActionGroups.Custom10, AV.ActionGroups[KSPActionGroup.Custom10]);
+            KD.MainControls = CalcMainControls();
+
+            KD.ActionGroups = CalcActionGroups();
 
             if (AV.orbit.referenceBody != null)
             {
@@ -329,11 +328,8 @@ namespace KSP_YARK
             KD.SpeedMode = (byte)(FlightGlobals.speedDisplayMode + 1);
             KD.SASMode = GetSASMode();
 
-            KD.timeWarpRateIndex = (byte)TimeWarp.CurrentRateIndex;
-            if (KD.timeWarpRateIndex != 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH)
-            {
-                KD.timeWarpRateIndex += 3;
-            }
+            KD.timeWarpRateIndex = GetTimeWarpIndex();
+
 
             KD.ID++;
 
@@ -346,12 +342,39 @@ namespace KSP_YARK
             Marshal.FreeHGlobal(ptr);
 
             ns.Write(arr, 0, arr.Length);
+        }
 
+        byte CalcMainControls()
+        {
+            byte MainControls = 0;
+            MainControls |= (byte)(((AV.ActionGroups[KSPActionGroup.SAS] ? 1 : 0)) << 0);
+            MainControls |= (byte)(((AV.ActionGroups[KSPActionGroup.RCS] ? 1 : 0)) << 1);
+            MainControls |= (byte)(((AV.ActionGroups[KSPActionGroup.Light] ? 1 : 0)) << 2);
+            MainControls |= (byte)(((AV.ActionGroups[KSPActionGroup.Gear] ? 1 : 0)) << 3);
+            MainControls |= (byte)(((AV.ActionGroups[KSPActionGroup.Brakes] ? 1 : 0)) << 4);
+            MainControls |= (byte)(((AV.ActionGroups[KSPActionGroup.Abort] ? 1 : 0)) << 5);
+            MainControls |= (byte)(((AV.ActionGroups[KSPActionGroup.Stage] ? 1 : 0)) << 6);
+            return MainControls;
+        }
+
+        UInt16 CalcActionGroups()
+        {
+            UInt16 ActionGroups = 0;
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom01] ? 1 : 0)) << 0);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom02] ? 1 : 0)) << 1);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom03] ? 1 : 0)) << 2);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom04] ? 1 : 0)) << 3);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom05] ? 1 : 0)) << 4);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom06] ? 1 : 0)) << 5);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom07] ? 1 : 0)) << 6);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom08] ? 1 : 0)) << 7);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom09] ? 1 : 0)) << 8);
+            ActionGroups |= (UInt16)(((AV.ActionGroups[KSPActionGroup.Custom10] ? 1 : 0)) << 9);
+            return ActionGroups;
         }
 
         private void UpdateControls()
         {
-
             if (VC.RCS != VCOld.RCS)
             {
                 AV.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
@@ -393,64 +416,13 @@ namespace KSP_YARK
 
             //================ control groups
 
-            if (VC.ControlGroup[1] != VCOld.ControlGroup[1])
+            for (int j = 0; j < 10; j++)
             {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom01, VC.ControlGroup[1]);
-                VCOld.ControlGroup[1] = VC.ControlGroup[1];
-            }
-
-            if (VC.ControlGroup[2] != VCOld.ControlGroup[2])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom02, VC.ControlGroup[2]);
-                VCOld.ControlGroup[2] = VC.ControlGroup[2];
-            }
-
-            if (VC.ControlGroup[3] != VCOld.ControlGroup[3])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom03, VC.ControlGroup[3]);
-                VCOld.ControlGroup[3] = VC.ControlGroup[3];
-            }
-
-            if (VC.ControlGroup[4] != VCOld.ControlGroup[4])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom04, VC.ControlGroup[4]);
-                VCOld.ControlGroup[4] = VC.ControlGroup[4];
-            }
-
-            if (VC.ControlGroup[5] != VCOld.ControlGroup[5])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom05, VC.ControlGroup[5]);
-                VCOld.ControlGroup[5] = VC.ControlGroup[5];
-            }
-
-            if (VC.ControlGroup[6] != VCOld.ControlGroup[6])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom06, VC.ControlGroup[6]);
-                VCOld.ControlGroup[6] = VC.ControlGroup[6];
-            }
-
-            if (VC.ControlGroup[7] != VCOld.ControlGroup[7])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom07, VC.ControlGroup[7]);
-                VCOld.ControlGroup[7] = VC.ControlGroup[7];
-            }
-
-            if (VC.ControlGroup[8] != VCOld.ControlGroup[8])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom08, VC.ControlGroup[8]);
-                VCOld.ControlGroup[8] = VC.ControlGroup[8];
-            }
-
-            if (VC.ControlGroup[9] != VCOld.ControlGroup[9])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom09, VC.ControlGroup[9]);
-                VCOld.ControlGroup[9] = VC.ControlGroup[9];
-            }
-
-            if (VC.ControlGroup[10] != VCOld.ControlGroup[10])
-            {
-                AV.ActionGroups.SetGroup(KSPActionGroup.Custom10, VC.ControlGroup[10]);
-                VCOld.ControlGroup[10] = VC.ControlGroup[10];
+                if (VC.ActionGroups[j] != VCOld.ActionGroups[j])
+                {
+                    AV.ActionGroups.SetGroup((KSPActionGroup)(1 << (7 + j)), VC.ActionGroups[1]);
+                    VCOld.ActionGroups[j] = VC.ActionGroups[j];
+                }
             }
 
             //Set TimeWarp rate
@@ -476,9 +448,19 @@ namespace KSP_YARK
             //Set sas mode
             if (VC.SASMode != VCOld.SASMode)
             {
-                if (VC.SASMode != 0 && VC.SASMode < 11)
+                int setTo = VC.SASMode;
+                if (setTo == 11)
                 {
-                    SetSASMode(VC.SASMode);
+                    setTo = 1;
+                    VC.holdTargetVector = true;
+                }
+                else
+                {
+                    VC.holdTargetVector = false;
+                }
+                if (setTo != 0 && setTo < 11)
+                {
+                    SetSASMode(setTo);
                 }
                 VCOld.SASMode = VC.SASMode;
             }
@@ -545,56 +527,55 @@ namespace KSP_YARK
 
                 if (str.HEADER_0 == 0xC4)
                 {
-                    VC.SAS = BitMathByte(str.MainControls, 7);
-                    VC.RCS = BitMathByte(str.MainControls, 6);
-                    VC.Lights = BitMathByte(str.MainControls, 5);
-                    VC.Gear = BitMathByte(str.MainControls, 4);
-                    VC.Brakes = BitMathByte(str.MainControls, 3);
-                    VC.Precision = BitMathByte(str.MainControls, 2);
-                    VC.Abort = BitMathByte(str.MainControls, 1);
-                    VC.Stage = BitMathByte(str.MainControls, 0);
-
-                    VC.Pitch = (float)str.Pitch / 1000.0F;
-                    VC.Roll = (float)str.Roll / 1000.0F;
-                    VC.Yaw = (float)str.Yaw / 1000.0F;
-                    VC.TX = (float)str.TX / 1000.0F;
-                    VC.TY = (float)str.TY / 1000.0F;
-                    VC.TZ = (float)str.TZ / 1000.0F;
-                    VC.WheelSteer = (float)str.WheelSteer / 1000.0F;
-                    VC.Throttle = (float)str.Throttle / 1000.0F;
-                    VC.WheelThrottle = (float)str.WheelThrottle / 1000.0F;
-
-                    if ((int)str.SASMode == 11)
-                    {
-                        VC.SASMode = 1;
-                        VC.holdTargetVector = true;
-                    }
-                    else
-                    {
-                        VC.SASMode = (int)str.SASMode;
-                        VC.holdTargetVector = false;
-                    }
-                    VC.SpeedMode = (int)str.SpeedMode;
-
-                    VC.targetHeading = str.targetHeading;
-                    VC.targetPitch = str.targetPitch;
-                    VC.targetRoll = str.targetRoll;
-
-                    VC.timeWarpRateIndex = str.timeWarpRateIndex;
-
-                    //Debug.Log("main ctrs: " + str.MainControls);
-
-                    for (int j = 1; j <= 10; j++)
-                    {
-                        VC.ControlGroup[j] = BitMathshort(str.ControlGroup, j);
-                    }
+                    newDataRec = true;
+                    VC = CPToVC(str);
                 }
                 else
                 {
                     Debug.Log("YARK: server recieved malformed packet");
                 }
             }
-            UpdateControls();
+        }
+
+        VesselControls CPToVC(ControlPacket cp)
+        {
+            VesselControls vc = new VesselControls
+            {
+                SAS = (cp.MainControls & (1 << 0)) != 0,
+                RCS = (cp.MainControls & (1 << 1)) != 0,
+                Lights = (cp.MainControls & (1 << 2)) != 0,
+                Gear = (cp.MainControls & (1 << 3)) != 0,
+                Brakes = (cp.MainControls & (1 << 4)) != 0,
+                Abort = (cp.MainControls & (1 << 5)) != 0,
+                Stage = (cp.MainControls & (1 << 6)) != 0,
+
+                Pitch = (float)cp.Pitch / 1000.0F,
+                Roll = (float)cp.Roll / 1000.0F,
+                Yaw = (float)cp.Yaw / 1000.0F,
+                TX = (float)cp.TX / 1000.0F,
+                TY = (float)cp.TY / 1000.0F,
+                TZ = (float)cp.TZ / 1000.0F,
+                WheelSteer = (float)cp.WheelSteer / 1000.0F,
+                Throttle = (float)cp.Throttle / 1000.0F,
+                WheelThrottle = (float)cp.WheelThrottle / 1000.0F,
+
+                SASMode = (int)cp.SASMode,
+                SpeedMode = (int)cp.SpeedMode,
+
+                targetHeading = cp.targetHeading,
+                targetPitch = cp.targetPitch,
+                targetRoll = cp.targetRoll,
+
+                timeWarpRateIndex = cp.timeWarpRateIndex,
+
+                ActionGroups = new Boolean[10]
+            };
+
+            for (int j = 0; j < 10; j++)
+            {
+                vc.ActionGroups[j] = (cp.ActionGroups & (1 << j)) == 1;
+            }
+            return vc;
         }
 
         #region structsNStuff
@@ -633,16 +614,14 @@ namespace KSP_YARK
             public float Pitch; //pitch and heading close together so c++ can use this as a NavHeading ptr
             public float Heading;
             public float Roll;
-            //  public float dPitch;
-            //  public float dHeading;
-            //  public float dRoll;
 
             //#### NAVBALL VECTOR #######
             public NavHeading Prograde;
             public NavHeading Target;
             public NavHeading Maneuver;
 
-            public UInt16 ActionGroups; //  status bit order:SAS, RCS, Light, Gear, Brakes, Abort, Custom01 - 10 
+            public byte MainControls;                   //SAS RCS Lights Gear Brakes Abort Stage
+            public UInt16 ActionGroups;                   //action groups 1-10 in 2 bytes
             public float VVI;
             public float G;
             public float RAlt;
@@ -709,9 +688,8 @@ namespace KSP_YARK
         {
             public byte HEADER_0;
             public long ID;
-            public byte MainControls;                  //SAS RCS Lights Gear Brakes Precision Abort Stage 
-            public byte Mode;                          //0 = stage, 1 = docking, 2 = map
-            public short ControlGroup;                //control groups 1-10 in 2 bytes
+            public byte MainControls;                   //SAS RCS Lights Gear Brakes Abort Stage
+            public UInt16 ActionGroups;                //action groups 1-10 in 2 bytes
             public short Pitch;                        //-1000 -> 1000
             public short Roll;                         //-1000 -> 1000
             public short Yaw;                          //-1000 -> 1000
@@ -734,13 +712,13 @@ namespace KSP_YARK
             public Boolean Lights;
             public Boolean Gear;
             public Boolean Brakes;
-            public Boolean Precision;
+            //public Boolean Precision;
             public Boolean Abort;
             public Boolean Stage;
             public int Mode;
             public int SASMode;
             public int SpeedMode;
-            public Boolean[] ControlGroup;
+            public Boolean[] ActionGroups;
             public float Pitch;
             public float Roll;
             public float Yaw;
@@ -755,32 +733,12 @@ namespace KSP_YARK
             public byte timeWarpRateIndex;
             public VesselControls(bool ignore)
             {
-                holdTargetVector = SAS = RCS = Lights = Gear = Brakes = Precision = Abort = Stage = false;
+                holdTargetVector = SAS = RCS = Lights = Gear = Brakes /*= Precision*/ = Abort = Stage = false;
                 Mode = SASMode = SpeedMode = 0;
                 timeWarpRateIndex = 1;
-                ControlGroup = new Boolean[11];
+                ActionGroups = new Boolean[10];
                 targetHeading = targetPitch = targetRoll = Pitch = Roll = Yaw = TX = TY = TZ = WheelSteer = Throttle = WheelThrottle = 0;
             }
-        };
-
-        enum ActionGroups : int
-        {
-            SAS,
-            RCS,
-            Light,
-            Gear,
-            Brakes,
-            Abort,
-            Custom01,
-            Custom02,
-            Custom03,
-            Custom04,
-            Custom05,
-            Custom06,
-            Custom07,
-            Custom08,
-            Custom09,
-            Custom10,
         };
 
         public struct IOResource
@@ -791,6 +749,16 @@ namespace KSP_YARK
         #endregion
 
         #region UtilityFunction
+
+        private byte GetTimeWarpIndex()
+        {
+            byte timeWarpRateIndex = (byte)TimeWarp.CurrentRateIndex;
+            if (timeWarpRateIndex != 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH)
+            {
+                timeWarpRateIndex += 3;
+            }
+            return timeWarpRateIndex;
+        }
 
         private void msg(string msg)
         {
@@ -805,13 +773,13 @@ namespace KSP_YARK
 
         private void SetSASMode(int mode)
         {
-            if (!AV.Autopilot.CanSetMode((VesselAutopilot.AutopilotMode)(mode - 1)))
+            if (AV.Autopilot.CanSetMode((VesselAutopilot.AutopilotMode)(mode - 1)))
             {
-                ScreenMessages.PostScreenMessage("SAS mode " + mode.ToString() + " not avalible");
+                AV.Autopilot.SetMode((VesselAutopilot.AutopilotMode)(mode - 1));
             }
             else
             {
-                AV.Autopilot.SetMode((VesselAutopilot.AutopilotMode)(mode - 1));
+                msg("SAS mode " + mode.ToString() + " not avalible");
             }
         }
 
@@ -997,15 +965,15 @@ namespace KSP_YARK
             return R;
         }
 
-        private Boolean BitMathByte(byte x, int n)
-        {
-            return ((x >> n) & 1) == 1;
-        }
+        /* private Boolean BitMathByte(byte x, int n)
+         {
+             return ((x >> n) & 1) == 1;
+         }
 
-        private Boolean BitMathshort(short x, int n)
-        {
-            return ((x >> n) & 1) == 1;
-        }
+         private Boolean BitMathshort(short x, int n)
+         {
+             return ((x >> n) & 1) == 1;
+         }*/
 
         private Boolean TargetExists()
         {
@@ -1275,14 +1243,6 @@ namespace KSP_YARK
 
             percent = (byte)Math.Round(percentD * 100);
             return percent;
-        }
-
-        private void ControlStatus(int n, bool s)
-        {
-            if (s)
-                KD.ActionGroups |= (UInt16)(1 << n);       // forces nth bit of x to be 1.  all other bits left alone.
-            else
-                KD.ActionGroups &= (UInt16)~(1 << n);      // forces nth bit of x to be 0.  all other bits left alone.
         }
 
         #endregion
