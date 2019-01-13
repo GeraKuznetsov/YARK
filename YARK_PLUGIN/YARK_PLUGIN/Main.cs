@@ -6,8 +6,6 @@ using System.Net.Sockets;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
 using KSP.UI.Screens;
-using System.Net.NetworkInformation;
-using System.Linq;
 
 namespace KSP_YARK
 {
@@ -36,16 +34,27 @@ namespace KSP_YARK
             DontDestroyOnLoad(gameObject);
             msg("Starting YARK KSPWebsockIO");
 
+            Header h = new Header();
+
+            unsafe
+            {
+                for (int i = 0; i < Header_Array.Length; i++)
+                {
+                    h.header[i] = Header_Array[i];
+                }
+            }
+
+
             SC = new StatusChange
             {
-                HEADER_0 = 0xC4,
+                header = h,
                 packetType = 0x01,
                 ID = 0
             };
 
             KD = new KSPData
             {
-                HEADER_0 = 0xC4,
+                header = h,
                 packetType = 0x02,
                 ID = 0
             };
@@ -179,11 +188,11 @@ namespace KSP_YARK
         {
             float time = Time.unscaledTime;
             KD.deltaTime = time - TimeOFLastSend;
-            TimeOFLastSend = time;
             if (Config.UpdatesPerSecond != 0 && ((KD.deltaTime) < (1.0f / (float)(Config.UpdatesPerSecond))))
             {
                 return;
             }
+            TimeOFLastSend = time;
 
             List<Part> ActiveEngines = new List<Part>();
             ActiveEngines = GetListOfActivatedEngines(AV);
@@ -579,10 +588,20 @@ namespace KSP_YARK
         }
 
         #region structsNStuff
+
+        byte[] Header_Array = new[] { (byte)0xFF, (byte)0xC4, (byte)'Y', (byte)'A', (byte)'R', (byte)'K', (byte)0x00, (byte)0xFF };
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public unsafe struct Header
+        {
+            public fixed byte header[8];
+        }
+
+
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public unsafe struct StatusChange
         {
-            public byte HEADER_0;
+            public Header header;
             public byte packetType;
             public long ID;
             public byte status;
@@ -601,10 +620,10 @@ namespace KSP_YARK
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
-        public struct KSPData
+        public unsafe struct KSPData
         {
             //##### HEADER ######
-            public byte HEADER_0;
+            public Header header;
             public byte packetType;
             public long ID;
 
