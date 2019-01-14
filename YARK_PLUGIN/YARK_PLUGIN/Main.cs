@@ -16,9 +16,17 @@ namespace KSP_YARK
         TcpClient client;
         NetworkStream ns;
         bool conn;
+
+        const int RECV_BUFFER_SIZE = 1024 * 16;
+        byte[] Buffer = new byte[RECV_BUFFER_SIZE + Marshal.SizeOf(typeof(ControlPacket))];
+        int bp = 0; // reset on new connection
+
         KSPData KD;
         StatusChange SC;
         VesselControls VC, VCOld;
+
+        ControlPacket CP = new ControlPacket();
+
         bool inFlight, virginConection;
         public static Vessel AV;
         Vector3d CoM, north, up, east;
@@ -147,6 +155,7 @@ namespace KSP_YARK
                 newDataRec = false;
                 TimeOFLastSend = Time.unscaledTime;
                 lastTime = 0;
+                bp = 0;
             }
         }
         /*  public void OnDisable()
@@ -351,7 +360,9 @@ namespace KSP_YARK
             Marshal.FreeHGlobal(ptr);
 
             ns.Write(arr, 0, arr.Length);
+            
         }
+        
 
         byte CalcMainControls()
         {
@@ -520,29 +531,52 @@ namespace KSP_YARK
             }
         }
 
+        private bool euqHeader(int p)
+        {
+            for (int i = 0; i < Header_Array.Length; i++)
+            {
+                if (Buffer[p + i] != Header_Array[i])
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+
         private void ServerReceive()
         {
-            byte[] msg = new byte[Marshal.SizeOf(typeof(ControlPacket))];
-            while (ns.DataAvailable)
+            int bytesRead;
+            if ((bytesRead = ns.Read(Buffer, bp, RECV_BUFFER_SIZE - bp)) > 0)
             {
-                ns.Read(msg, 0, msg.Length);
-
-                ControlPacket str = new ControlPacket();
-                int size = Marshal.SizeOf(str);
-                IntPtr ptr = Marshal.AllocHGlobal(size);
-                Marshal.Copy(msg, 0, ptr, size);
-                str = (ControlPacket)Marshal.PtrToStructure(ptr, str.GetType());
-                Marshal.FreeHGlobal(ptr);
-
-                if (str.HEADER_0 == 0xC4)
+                bp += bytesRead;
+                int p = 0;
+                while (p + Marshal.SizeOf(typeof(ControlPacket)) <= bp)
                 {
-                    newDataRec = true;
-                    VC = CPToVC(str);
+                    if (euqHeader(p))
+                    {
+                        p += Header_Array.Length;
+
+                        int size = Marshal.SizeOf(CP);
+                        IntPtr ptr = Marshal.AllocHGlobal(size);
+                        Marshal.Copy(Buffer, p, ptr, size);
+                        CP = (ControlPacket)Marshal.PtrToStructure(ptr, CP.GetType());
+                        Marshal.FreeHGlobal(ptr);
+
+                        newDataRec = true;
+                        VC = CPToVC(CP);
+                    }
+                    else
+                    {
+                        p++;
+                    }
                 }
-                else
+                for (int i = 0; i < bp - p; i++) // memcpy(buffer, buffer + p, bp - p);
                 {
-                    Debug.Log("YARK: server recieved malformed packet");
+                    Buffer[i] = Buffer[p + i];
                 }
+                bp = bp - p;
+
             }
         }
 
@@ -705,7 +739,7 @@ namespace KSP_YARK
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public struct ControlPacket
         {
-            public byte HEADER_0;
+            //public byte HEADER_0;
             public long ID;
             public byte MainControls;                   //SAS RCS Lights Gear Brakes Abort Stage
             public UInt16 ActionGroups;                //action groups 1-10 in 2 bytes
