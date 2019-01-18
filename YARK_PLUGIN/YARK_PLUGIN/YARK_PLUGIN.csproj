@@ -52,8 +52,12 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AxisInput.cs" />
     <Compile Include="Config.cs" />
+    <Compile Include="Connection.cs" />
     <Compile Include="Main.cs" />
+    <Compile Include="Structs.cs" />
+    <Compile Include="Util.cs" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

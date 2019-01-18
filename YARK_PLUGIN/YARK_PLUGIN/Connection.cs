@@ -187,7 +187,7 @@ namespace KSP_PLUGIN
             Marshal.Copy(ptr, arr, 0, size);
             Marshal.FreeHGlobal(ptr);
 
-            Send(arr);
+            sendQueue.Enqueue(arr);
 
             SPc++;
         }
@@ -214,15 +214,13 @@ namespace KSP_PLUGIN
             Marshal.Copy(ptr, arr, 0, size);
             Marshal.FreeHGlobal(ptr);
 
-            Send(arr);
+            sendQueue.Enqueue(arr);
 
             VPc++;
         }
 
         public void Send(byte[] arr) //make asynchronous
         {
-            Debug.Log("adding to quque");
-            sendQueue.Enqueue(arr);
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
