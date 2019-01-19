@@ -12,26 +12,27 @@ using static KSP_PLUGIN.Util;
 namespace KSP_YARK
 {
     [KSPAddon(KSPAddon.Startup.MainMenu, true)]
-    public class YARK : MonoBehaviour
+    public class Main : MonoBehaviour
     {
-        TcpListener server;
-
         //Connection con;
-        Connection conn;
+        public static Connection conn;
+
+        TcpListener server;
 
         VesselPacket VP;
         StatusPacket SP;
 
-        ControlPacket CP = new ControlPacket();
+        // ControlPacket CP = new ControlPacket();
 
         int inFlight;
         public static Vessel AV;
-        Vector3d CoM, north, up, east;
         IOResource TempR;
-        Boolean wasSASOn = false, forceSASMode = false, newDataRec = false;
-        int lastSASMode = 1;
-        float TimeOFLastSend;
-        UInt32 currentTime, lastTime; //Checking for revert / save backwards in time
+
+        private Vector3d CoM, north, up, east;
+        private Boolean wasSASOn = false, forceSASMode = false;
+        private int lastSASMode = 1;
+        private float TimeOFLastSend;
+        private UInt32 currentTime, lastTime; //Checking for revert / save backwards in time
 
         public void Awake()
         {
@@ -96,7 +97,26 @@ namespace KSP_YARK
                             SetSASMode(lastSASMode);
                         }
 
-                        if (AxisInput.holdTargetVector) //custom SAS vectoring
+                        if (AxisInput.SupressSAS) // SAS suspention for joystick input
+                        {
+                            if ((AV.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
+                            {
+                                wasSASOn = true;
+                                lastSASMode = GetSASMode();
+                                AV.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
+                            }
+                        }
+                        else
+                        {
+                            if (wasSASOn == true)
+                            {
+                                wasSASOn = false;
+                                AV.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
+                                forceSASMode = true;
+                            }
+                        }
+
+                        if (AxisInput.holdTargetVector) //custom SAS vectoring WIP
                         {
                             Quaternion relativeOrientation = Quaternion.identity * Quaternion.Euler((-AxisInput.targetHeading + 90) * new Vector3(1, 0, 0));
                             relativeOrientation = relativeOrientation * Quaternion.Euler((AxisInput.targetPitch) * new Vector3(0, 0, 1));
@@ -106,11 +126,8 @@ namespace KSP_YARK
 
                             Quaternion currentOrientation = FlightGlobals.ActiveVessel.Autopilot.SAS.lockedRotation;
                             float delta = Quaternion.Angle(goalOrientation, currentOrientation);
+                            // float slerp = (float)Math.Pow(delta / 90f, 4) * 0.02f;
                             float slerp = delta / 90f * 0.02f;
-                            if (delta < 1)
-                            {
-                                slerp = 0.5f;
-                            }
                             FlightGlobals.ActiveVessel.Autopilot.SAS.LockRotation(Quaternion.Slerp(currentOrientation, goalOrientation, slerp));
                         }
 
@@ -173,7 +190,7 @@ namespace KSP_YARK
                 fixed (byte* charPtr = SP.vessalName)
                 {
                     int i = 0;
-                    for (; i < Math.Min(15, name.Length); i++)
+                    for (; i < Math.Min(31, name.Length); i++)
                     {
                         *(charPtr + i) = (byte)name[i];
                     }
@@ -330,7 +347,6 @@ namespace KSP_YARK
             VP.timeWarpRateIndex = GetTimeWarpIndex();
         }
 
-
         byte CalcMainControls()
         {
             byte MainControls = 0;
@@ -365,32 +381,26 @@ namespace KSP_YARK
             if (VC.RCS != VCOld.RCS)
             {
                 AV.ActionGroups.SetGroup(KSPActionGroup.RCS, VC.RCS);
-                //VCOld.RCS = VC.RCS;
             }
             if (VC.SAS != VCOld.SAS)
             {
                 AV.ActionGroups.SetGroup(KSPActionGroup.SAS, VC.SAS);
-                // VCOld.SAS = VC.SAS;
             }
             if (VC.Lights != VCOld.Lights)
             {
                 AV.ActionGroups.SetGroup(KSPActionGroup.Light, VC.Lights);
-                //VCOld.Lights = VC.Lights;
             }
             if (VC.Gear != VCOld.Gear)
             {
                 AV.ActionGroups.SetGroup(KSPActionGroup.Gear, VC.Gear);
-                //VCOld.Gear = VC.Gear;
             }
             if (VC.Brakes != VCOld.Brakes)
             {
                 AV.ActionGroups.SetGroup(KSPActionGroup.Brakes, VC.Brakes);
-                //VCOld.Brakes = VC.Brakes;
             }
             if (VC.Abort != VCOld.Abort)
             {
                 AV.ActionGroups.SetGroup(KSPActionGroup.Abort, VC.Abort);
-                // VCOld.Abort = VC.Abort;
             }
             if (VC.Stage != VCOld.Stage)
             {
@@ -398,7 +408,6 @@ namespace KSP_YARK
                     StageManager.ActivateNextStage();
 
                 AV.ActionGroups.SetGroup(KSPActionGroup.Stage, VC.Stage);
-                // VCOld.Stage = VC.Stage;
             }
 
             //================ control groups
@@ -408,7 +417,6 @@ namespace KSP_YARK
                 if (VC.ActionGroups[j] != VCOld.ActionGroups[j])
                 {
                     AV.ActionGroups.SetGroup((KSPActionGroup)(1 << (7 + j)), VC.ActionGroups[1]);
-                    //VCOld.ActionGroups[j] = VC.ActionGroups[j];
                 }
             }
 
@@ -429,7 +437,6 @@ namespace KSP_YARK
                         TimeWarp.SetRate(mode, false);
                     }
                 }
-                // VCOld.timeWarpRateIndex = VC.timeWarpRateIndex;
             }
 
             //Set sas mode
@@ -449,7 +456,6 @@ namespace KSP_YARK
                 {
                     SetSASMode(setTo);
                 }
-                // VCOld.SASMode = VC.SASMode;
             }
 
             //set navball mode
@@ -459,40 +465,14 @@ namespace KSP_YARK
                 {
                     FlightGlobals.SetSpeedMode((FlightGlobals.SpeedDisplayModes)(VC.SpeedMode - 1));
                 }
-                // VCOld.SpeedMode = VC.SpeedMode;
             }
 
-            if (Math.Abs(VC.Pitch) > Config.SASTol || Math.Abs(VC.Roll) > Config.SASTol || Math.Abs(VC.Yaw) > Config.SASTol)
+            if (!float.IsNaN(VC.targetHeading) && !float.IsNaN(VC.targetPitch) && !float.IsNaN(VC.targetRoll))
             {
-                if ((AV.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
-                {
-                    wasSASOn = true;
-                    lastSASMode = GetSASMode();
-                    AV.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
-                }
+                AxisInput.targetPitch = VC.targetPitch;
+                AxisInput.targetRoll = VC.targetRoll;
+                AxisInput.targetHeading = VC.targetHeading;
             }
-            else
-            {
-                if (wasSASOn == true)
-                {
-                    wasSASOn = false;
-                    AV.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
-                    forceSASMode = true;
-                }
-            }
-            AxisInput.Pitch = AxisInput.Roll = AxisInput.Yaw = AxisInput.TX = AxisInput.TY = AxisInput.TZ = AxisInput.targetPitch = AxisInput.targetRoll = AxisInput.targetHeading = 0;
-            AxisInput.Pitch = VC.Pitch;
-            AxisInput.Roll = VC.Roll;
-            AxisInput.Yaw = VC.Yaw;
-            AxisInput.TX = VC.TX;
-            AxisInput.TY = VC.TY;
-            AxisInput.TZ = VC.TZ;
-            AxisInput.Throttle = VC.Throttle;
-            AxisInput.WheelSteer = VC.WheelSteer;
-            AxisInput.WheelThrottle = VC.WheelThrottle;
-            AxisInput.targetPitch = VC.targetPitch;
-            AxisInput.targetRoll = VC.targetRoll;
-            AxisInput.targetHeading = VC.targetHeading;
         }
 
         public static byte GetSASMode()

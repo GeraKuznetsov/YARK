@@ -8,6 +8,32 @@ namespace KSP_PLUGIN
 {
     class Util
     {
+        public static AxisControls CPToAC(ControlPacket cp)
+        {
+            AxisControls ac = new AxisControls
+            {
+                SASTol = cp.SASTol,
+
+                RotMode = cp.ControlerMode & 0b00000011,
+                Pitch = (float)cp.Pitch / 1000.0F,
+                Roll = (float)cp.Roll / 1000.0F,
+                Yaw = (float)cp.Yaw / 1000.0F,
+
+                TransMode = cp.ControlerMode & 0b00001100 >> 2,
+                TX = (float)cp.TX / 1000.0F,
+                TY = (float)cp.TY / 1000.0F,
+                TZ = (float)cp.TZ / 1000.0F,
+
+                ThrottleMode = cp.ControlerMode & 0b00110000 >> 4,
+                Throttle = (float)cp.Throttle / 1000.0F,
+
+                WheelMode = cp.ControlerMode & 0b11000000 >> 6,
+                WheelSteer = (float)cp.WheelSteer / 1000.0F,
+                WheelThrottle = (float)cp.WheelThrottle / 1000.0F,
+            };
+            return ac;
+        }
+
         public static VesselControls CPToVC(ControlPacket cp)
         {
             VesselControls vc = new VesselControls
@@ -19,16 +45,6 @@ namespace KSP_PLUGIN
                 Brakes = (cp.MainControls & (1 << 4)) != 0,
                 Abort = (cp.MainControls & (1 << 5)) != 0,
                 Stage = (cp.MainControls & (1 << 6)) != 0,
-
-                Pitch = (float)cp.Pitch / 1000.0F,
-                Roll = (float)cp.Roll / 1000.0F,
-                Yaw = (float)cp.Yaw / 1000.0F,
-                TX = (float)cp.TX / 1000.0F,
-                TY = (float)cp.TY / 1000.0F,
-                TZ = (float)cp.TZ / 1000.0F,
-                WheelSteer = (float)cp.WheelSteer / 1000.0F,
-                Throttle = (float)cp.Throttle / 1000.0F,
-                WheelThrottle = (float)cp.WheelThrottle / 1000.0F,
 
                 SASMode = (int)cp.SASMode,
                 SpeedMode = (int)cp.SpeedMode,

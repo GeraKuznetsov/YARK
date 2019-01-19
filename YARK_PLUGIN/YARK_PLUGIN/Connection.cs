@@ -25,12 +25,18 @@ namespace KSP_PLUGIN
         SendSP sendSP;
         SendVP sendVP;
         VesselControls VCOld;
+        AxisControls axisControls;
 
         int SPc = 0, VPc = 0;
 
         int lastCPID = -1;
 
         bool Connected;
+
+        public AxisControls GetAxisControls()
+        {
+            return axisControls;
+        }
 
         public bool GetConnected()
         {
@@ -131,6 +137,7 @@ namespace KSP_PLUGIN
                         {
                             lastCPID = cp.ID;
                             VCList.Enqueue(CPToVC(cp));
+                            axisControls = CPToAC(cp);
                         }
                     }
                 }
@@ -172,8 +179,8 @@ namespace KSP_PLUGIN
             sendSP.sp = sp;
 
             UInt16 checksum;
-            unsafe            {
-
+            unsafe
+            {
                 checksum = Checksum((byte*)&sp, sizeof(StatusPacket));
             }
 
