@@ -175,7 +175,7 @@ namespace KSP_PLUGIN
         public void SendStatusPacket(StatusPacket sp)
         {
             if (!Connected) return;
-            sp.ID = SPc;
+            sp.ID = ++SPc;
             sendSP.sp = sp;
 
             UInt16 checksum;
@@ -195,14 +195,12 @@ namespace KSP_PLUGIN
             Marshal.FreeHGlobal(ptr);
 
             sendQueue.Enqueue(arr);
-
-            SPc++;
         }
 
         public void SendVesselPacket(VesselPacket vp)
         {
             if (!Connected) return;
-            vp.ID = VPc;
+            vp.ID = ++VPc;
             sendVP.vp = vp;
 
             UInt16 checksum;
@@ -222,8 +220,6 @@ namespace KSP_PLUGIN
             Marshal.FreeHGlobal(ptr);
 
             sendQueue.Enqueue(arr);
-
-            VPc++;
         }
 
         public void Send(byte[] arr) //make asynchronous

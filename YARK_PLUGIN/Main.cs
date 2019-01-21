@@ -416,7 +416,7 @@ namespace KSP_YARK
             {
                 if (VC.ActionGroups[j] != VCOld.ActionGroups[j])
                 {
-                    AV.ActionGroups.SetGroup((KSPActionGroup)(1 << (7 + j)), VC.ActionGroups[1]);
+                    AV.ActionGroups.SetGroup((KSPActionGroup)(1 << (7 + j)), VC.ActionGroups[j]);
                 }
             }
 

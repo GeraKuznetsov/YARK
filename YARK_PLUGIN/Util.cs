@@ -60,7 +60,7 @@ namespace KSP_PLUGIN
 
             for (int j = 0; j < 10; j++)
             {
-                vc.ActionGroups[j] = (cp.ActionGroups & (1 << j)) == 1;
+                vc.ActionGroups[j] = (cp.ActionGroups & (1 << j)) != 0;
             }
             return vc;
         }
