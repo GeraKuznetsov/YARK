@@ -19,15 +19,15 @@ namespace KSP_PLUGIN
                 Roll = (float)cp.Roll / 1000.0F,
                 Yaw = (float)cp.Yaw / 1000.0F,
 
-                TransMode = cp.ControlerMode & 0b00001100 >> 2,
+                TransMode = (cp.ControlerMode & 0b00001100) >> 2,
                 TX = (float)cp.TX / 1000.0F,
                 TY = (float)cp.TY / 1000.0F,
                 TZ = (float)cp.TZ / 1000.0F,
 
-                ThrottleMode = cp.ControlerMode & 0b00110000 >> 4,
+                ThrottleMode = (cp.ControlerMode & 0b00110000) >> 4,
                 Throttle = (float)cp.Throttle / 1000.0F,
 
-                WheelMode = cp.ControlerMode & 0b11000000 >> 6,
+                WheelMode = (cp.ControlerMode & 0b11000000) >> 6,
                 WheelSteer = (float)cp.WheelSteer / 1000.0F,
                 WheelThrottle = (float)cp.WheelThrottle / 1000.0F,
             };

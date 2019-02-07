@@ -85,7 +85,7 @@ public class Client {
     private OutputStream out;
     private InputStream in;
     private Socket ConnectSocket;
-    private boolean Running;
+    private volatile boolean Running;
 
     // IO packets
     public StatusPacket Status = new StatusPacket();
@@ -103,6 +103,7 @@ public class Client {
     }
 
     public void Connect(String IP, int PORT) {
+        state = TCP_CONNECTING;
         new Thread(() -> {
             ConnectRun(IP, PORT);
         }).start();
@@ -160,8 +161,7 @@ public class Client {
                             }
                         }
                     } else if (header.type == 2) {
-                        vP = new VesselPacket(
-                                recvVP = ReadBytes(VesselPacket.LENGTH));
+                        vP = new VesselPacket(recvVP = ReadBytes(VesselPacket.LENGTH));
                         if (checksum(recvVP) == header.checksum) {
                             if (vP.getID() > Vessel.getID()) {
                                 Vessel = vP;
@@ -175,8 +175,10 @@ public class Client {
                 }
             }
         } catch (IOException e) {
-            e.printStackTrace();
-            error = e.getMessage();
+            if (Running) {
+                e.printStackTrace();
+                error = e.getMessage();
+            }
         }
         if (Running) {
             Shutdown();

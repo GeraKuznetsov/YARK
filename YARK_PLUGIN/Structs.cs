@@ -108,7 +108,7 @@ namespace KSP_PLUGIN
             public float OxidizerS;
 
             //### MISC ###
-            public UInt32 MissionTime;
+            public double MissionTime;
             public UInt32 MNTime;
             public float MNDeltaV;
             public byte HasTarget;

@@ -17,7 +17,7 @@ void main() {
 		if (c->Status.inFlight) {//if there is a vessal in flight
 			switch (step) {
 			case 0:
-				if (c->Vessel.MissionTime > 1 & c->Vessel.CurrentStage - c->Vessel.TotalStage != 0) { //if there was a staging, flight has started
+				if (c->Vessel.MissionTime > 0.5f & c->Vessel.CurrentStage != c->Vessel.TotalStage) { //if there was a staging, flight has started
 					printf(c->Status.vesselName);
 					printf(": Flight Started\n");
 					step = 1;
@@ -35,17 +35,15 @@ void main() {
 				}
 				break;
 			case 2:
-				if ((c->Vessel.MissionTime - abortTime) > 2 & c->Vessel.Alt < 10000) { //after two seconds...
+				if ((c->Vessel.MissionTime - abortTime) > 1 & c->Vessel.Alt < 10000) { //after two seconds...
 					printf("ABORTING SEQUENCE STEP 2\n");
 					c->Control.SetActionGroup(AG_1, true);
 					c->SendControls(); //send control packet
 					step = 3;
-					goto exit;
 				}
 				break;
 			}
 		}
 	}
 	printf("Error: %s\n", c->error);
-exit:;
 }

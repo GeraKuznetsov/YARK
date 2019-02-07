@@ -37,6 +37,6 @@ public:
 	void SendControls();
 	void Shutdown();
 
-	int GetState();
+    int GetState();
 	void WaitForConnection();
 };

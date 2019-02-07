@@ -1,0 +1,1 @@
+These are bindings that allow writing of c++ and java program to control YARK. Look at ExcampleClient.cpp / .java for and excample.

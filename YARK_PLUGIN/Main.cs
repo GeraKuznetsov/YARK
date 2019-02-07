@@ -77,7 +77,7 @@ namespace KSP_YARK
                             {
                                 MainControls = CalcMainControls(),
                                 ActionGroups = CalcActionGroups(),
-                                SASMode = GetSASMode(),
+                                SASMode = GetSASMode(true),
                                 SpeedMode = (byte)(FlightGlobals.speedDisplayMode + 1),
                                 timeWarpRateIndex = GetTimeWarpIndex()
                             };
@@ -102,7 +102,7 @@ namespace KSP_YARK
                             if ((AV.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
                             {
                                 wasSASOn = true;
-                                lastSASMode = GetSASMode();
+                                lastSASMode = GetSASMode(false);
                                 AV.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
                             }
                         }
@@ -124,11 +124,23 @@ namespace KSP_YARK
 
                             Quaternion goalOrientation = Quaternion.LookRotation(north, east) * relativeOrientation;
 
-                            Quaternion currentOrientation = FlightGlobals.ActiveVessel.Autopilot.SAS.lockedRotation;
+                            Quaternion currentOrientation = AV.Autopilot.SAS.lockedRotation;
                             float delta = Quaternion.Angle(goalOrientation, currentOrientation);
                             // float slerp = (float)Math.Pow(delta / 90f, 4) * 0.02f;
-                            float slerp = delta / 90f * 0.02f;
-                            FlightGlobals.ActiveVessel.Autopilot.SAS.LockRotation(Quaternion.Slerp(currentOrientation, goalOrientation, slerp));
+                           // Debug.Log("Delta: " + delta);
+                            float slerp;
+                            /*   if (delta <= 15)
+                               {
+                                   slerp = (float)(Math.Log(delta + 1) / Math.Log(16) / 60.0f);
+                               }
+                               else
+                               {
+                                   slerp = delta / 90f * 0.1f;
+                               }*/
+
+                            slerp = (float)(Math.Log(delta + 1) / Math.Log(90) * 0.3);
+
+                            AV.Autopilot.SAS.LockRotation(Quaternion.Slerp(currentOrientation, goalOrientation, slerp));
                         }
 
                         float time = Time.unscaledTime;
@@ -260,7 +272,7 @@ namespace KSP_YARK
             VP.XenonGasTot = TempR.Max;
             VP.XenonGas = TempR.Current;
 
-            VP.MissionTime = (UInt32)Math.Round(AV.missionTime);
+            VP.MissionTime = AV.missionTime;
 
             VP.VOrbit = (float)AV.orbit.GetVel().magnitude;
 
@@ -342,7 +354,7 @@ namespace KSP_YARK
             VP.TotalStage = (byte)StageManager.StageCount;
 
             VP.SpeedMode = (byte)(FlightGlobals.speedDisplayMode + 1);
-            VP.SASMode = GetSASMode();
+            VP.SASMode = GetSASMode(true);
 
             VP.timeWarpRateIndex = GetTimeWarpIndex();
         }
@@ -475,9 +487,11 @@ namespace KSP_YARK
             }
         }
 
-        public static byte GetSASMode()
+        public static byte GetSASMode(bool acountForSAS_HOLD_VECTOR)
         {
-            return (AV.ActionGroups[KSPActionGroup.SAS]) ? ((byte)(FlightGlobals.ActiveVessel.Autopilot.Mode + 1)) : (byte)(0);
+            byte mode = (AV.ActionGroups[KSPActionGroup.SAS]) ? ((byte)(AV.Autopilot.Mode + 1)) : (byte)(0);
+            if (acountForSAS_HOLD_VECTOR && AxisInput.holdTargetVector && mode == 1) mode = 11;
+            return mode;
         }
 
         public static void SetSASMode(int mode)

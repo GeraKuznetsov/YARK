@@ -4,7 +4,7 @@ import Client.Util.BufferReader;
 
 public class VesselPacket {
 
-    public static final int LENGTH = 223;
+    public static final int LENGTH = 227;
 
     private int ID;
 
@@ -68,7 +68,7 @@ public class VesselPacket {
     public float OxidizerS;
 
     // ### MISC ###
-    public int MissionTime;
+    public double MissionTime;
     public int MNTime;
     public float MNDeltaV;
     public boolean HasTarget;
@@ -148,7 +148,8 @@ public class VesselPacket {
         LiquidFuelS = b.Float();
         OxidizerTotS = b.Float();
         OxidizerS = b.Float();
-        MissionTime = b.Int();
+        //MissionTime = b.Int();
+        MissionTime = b.Double();
         MNTime = b.Int();
         MNDeltaV = b.Float();
         HasTarget = b.Bool();
