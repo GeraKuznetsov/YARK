@@ -20,10 +20,12 @@ namespace KSP_PLUGIN
         TcpClient client;
 
         Queue<VesselControls> VCList;
+        Queue<ManChangePacket> MCPList;
         Queue<byte[]> sendQueue;
         NetworkStream ns;
         SendSP sendSP;
         SendVP sendVP;
+        Header sendODPHeader;
         VesselControls VCOld;
         AxisControls axisControls;
 
@@ -48,6 +50,7 @@ namespace KSP_PLUGIN
             Connected = true;
 
             VCList = new Queue<VesselControls>();
+            MCPList = new Queue<ManChangePacket>();
             sendQueue = new Queue<byte[]>();
 
             client = tcpClient;
@@ -67,7 +70,8 @@ namespace KSP_PLUGIN
                 header = new Header
                 {
                     header = h_,
-                    type = 1,
+                    length = (UInt16)Marshal.SizeOf(typeof(StatusPacket)),
+                    type = 1
                 }
             };
 
@@ -76,8 +80,15 @@ namespace KSP_PLUGIN
                 header = new Header
                 {
                     header = h_,
-                    type = 2,
+                    length = (UInt16)Marshal.SizeOf(typeof(VesselPacket)),
+                    type = 2
                 }
+            };
+
+            sendODPHeader = new Header
+            {
+                header = h_,
+                type = 3
             };
 
             new Thread(new ThreadStart(RunRecieve)).Start();
@@ -140,6 +151,12 @@ namespace KSP_PLUGIN
                             axisControls = CPToAC(cp);
                         }
                     }
+                    else if (header.type == 2)
+                    {
+                        Marshal.Copy(ReadBytes(Marshal.SizeOf(typeof(ManChangePacket))), 0, ptr, Marshal.SizeOf(typeof(ManChangePacket)));
+                        ManChangePacket mcp = (ManChangePacket)Marshal.PtrToStructure(ptr, typeof(ManChangePacket));
+                        MCPList.Enqueue(mcp);
+                    }
                 }
                 catch (IOException e)
                 {
@@ -155,9 +172,13 @@ namespace KSP_PLUGIN
             VCOld = vc;
         }
 
-        public bool HavePackets()
+        public bool HaveVCPackets()
         {
             return VCList.Count != 0;
+        }
+        public bool HaveMCPPackets()
+        {
+            return MCPList.Count != 0;
         }
 
         public VCDifference GetVC()
@@ -170,6 +191,87 @@ namespace KSP_PLUGIN
             };
             VCOld = newVC_;
             return vcDIff;
+        }
+
+        public ManChangePacket GetMCP()
+        {
+            return MCPList.Dequeue();
+        }
+
+        public void SendFlightPlanPacket(RawOrbitPlanData rawData)
+        {
+            if (!Connected) return;
+            int numOrbits = rawData.CurrentOrbitPatches.Count;
+            int numPlannedOrbits = rawData.PlannedOrbitPatches.Count;
+            int numMans = rawData.Mans.Count;
+            int targetNameLength = rawData.TargetName.Length;
+            sendODPHeader.length = (UInt16)(6 + Marshal.SizeOf(typeof(OrbitData)) * (numOrbits + numPlannedOrbits + 1)
+                + Marshal.SizeOf(typeof(ManData)) * numMans
+                + targetNameLength + Marshal.SizeOf(typeof(ClosestAprouchData)));
+            int fullPayloadLength = sendODPHeader.length + Marshal.SizeOf(typeof(Header));
+            byte[] payload = new byte[fullPayloadLength]; //copy to here
+
+            int copyOffset = Marshal.SizeOf(typeof(Header));
+            payload[copyOffset++] = (byte)numOrbits; //1
+
+            IntPtr ptr;
+            ptr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(OrbitData)));
+            for (int i = 0; i < numOrbits; i++)
+            {
+                Marshal.StructureToPtr(rawData.CurrentOrbitPatches[i], ptr, true);
+                Marshal.Copy(ptr, payload, copyOffset, Marshal.SizeOf(typeof(OrbitData)));
+                copyOffset += Marshal.SizeOf(typeof(OrbitData));
+            }
+
+            payload[copyOffset++] = (byte)rawData.ManPatchNum; //2
+            payload[copyOffset++] = (byte)numPlannedOrbits; //3
+
+            for (int i = 0; i < numPlannedOrbits; i++)
+            {
+                Marshal.StructureToPtr(rawData.PlannedOrbitPatches[i], ptr, true);
+                Marshal.Copy(ptr, payload, copyOffset, Marshal.SizeOf(typeof(OrbitData)));
+                copyOffset += Marshal.SizeOf(typeof(OrbitData));
+            }
+
+            //copy target orbit
+            Marshal.StructureToPtr(rawData.TargetOrbit, ptr, true);
+            Marshal.Copy(ptr, payload, copyOffset, Marshal.SizeOf(typeof(OrbitData)));
+            copyOffset += Marshal.SizeOf(typeof(OrbitData));
+
+            Marshal.FreeHGlobal(ptr);
+
+            payload[copyOffset++] = (byte)targetNameLength; //copy target name //4
+            for (int i = 0; i < targetNameLength; i++)
+            {
+                payload[copyOffset++] = (byte)rawData.TargetName[i];
+            }
+            payload[copyOffset++] = 0x00; //5
+
+            ptr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(ClosestAprouchData)));
+            Marshal.StructureToPtr(rawData.Rendezvous, ptr, true);
+            Marshal.Copy(ptr, payload, copyOffset, Marshal.SizeOf(typeof(ClosestAprouchData)));
+            Marshal.FreeHGlobal(ptr);
+            copyOffset += Marshal.SizeOf(typeof(ClosestAprouchData));
+
+            payload[copyOffset++] = (byte)numMans; //menuever nodes  //6
+
+            ptr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(ManData)));
+            for (int i = 0; i < numMans; i++)
+            {
+                Marshal.StructureToPtr(rawData.Mans[i], ptr, true);
+                Marshal.Copy(ptr, payload, copyOffset, Marshal.SizeOf(typeof(ManData)));
+                copyOffset += Marshal.SizeOf(typeof(ManData));
+            }
+            Marshal.FreeHGlobal(ptr);
+
+            sendODPHeader.checksum = Checksum(payload, Marshal.SizeOf(typeof(Header)), sendODPHeader.length); //calc checksum
+
+            ptr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Header))); //copy header to array
+            Marshal.StructureToPtr(sendODPHeader, ptr, true);
+            Marshal.Copy(ptr, payload, 0, Marshal.SizeOf(typeof(Header)));
+            Marshal.FreeHGlobal(ptr);
+
+            sendQueue.Enqueue(payload); //enqueue data
         }
 
         public void SendStatusPacket(StatusPacket sp)
@@ -226,6 +328,16 @@ namespace KSP_PLUGIN
         {
         }
 
+
+        /*[StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public unsafe struct SendOrbitDataPacket
+        {
+            public Header header;
+            //public int ID;
+            //public byte NumOrbits;
+            //Future Orbits go here
+        }*/
+
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         struct SendSP
         {
@@ -239,6 +351,16 @@ namespace KSP_PLUGIN
             public Header header;
             public VesselPacket vp;
         };
+
+        private UInt16 Checksum(byte[] buffer, int offset, int length)
+        {
+            UInt16 acc = 0;
+            for (int i = offset; i < offset + length; i++)
+            {
+                acc += buffer[i];
+            }
+            return acc;
+        }
 
         private unsafe UInt16 Checksum(byte* buffer, int length)
         {

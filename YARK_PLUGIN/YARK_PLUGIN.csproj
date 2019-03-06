@@ -57,6 +57,7 @@
     <Compile Include="Connection.cs" />
     <Compile Include="Main.cs" />
     <Compile Include="IMAS\IMAS.cs" />
+    <Compile Include="OrbitUtil.cs" />
     <Compile Include="Structs.cs" />
     <Compile Include="Util.cs" />
   </ItemGroup>

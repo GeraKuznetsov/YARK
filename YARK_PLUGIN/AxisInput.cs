@@ -31,7 +31,7 @@ namespace KSP_PLUGIN
                     break;
             }
 
-            if (!holdTargetVector)
+            if (true || !holdTargetVector)
             {
                 switch (ac.RotMode)
                 {

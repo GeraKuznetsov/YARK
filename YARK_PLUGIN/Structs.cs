@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 
@@ -19,6 +20,7 @@ namespace KSP_PLUGIN
         {
             public HeaderArray header;
             public UInt16 checksum;
+            public UInt16 length;
             public byte type;
         }
 
@@ -27,8 +29,10 @@ namespace KSP_PLUGIN
         {
             public int ID;
 
-            public byte status;
+            public byte status; //Are we loaded in?
+            public byte YarkVersion;
             public fixed byte vessalName[32]; //32 bytes
+
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -50,7 +54,9 @@ namespace KSP_PLUGIN
             public float deltaTime;
 
             //##### CRAFT ######
-            public float Pitch; //pitch and heading close together so c++ can use this as a NavHeading ptr
+            public byte FlightStatus;
+
+            public float Pitch;
             public float Heading;
             public float Roll;
 
@@ -68,20 +74,10 @@ namespace KSP_PLUGIN
             public float Vsurf;
             public byte MaxOverHeat;    //  Max part overheat (% percent)
             public float IAS;           //  Indicated Air Speed
-
+            public float VOrbit;
 
             //###### ORBITAL ######
-            public float VOrbit;
-            public float AP;
-            public float PE;
-            public int TAp;
-            public int TPe;
-            public float SemiMajorAxis;
-            public float SemiMinorAxis;
-            public float e;
-            public float inc;
-            public int period;
-            public float TrueAnomaly;
+            public OrbitData CurrentOrbit;
             public float Lat;
             public float Lon;
 
@@ -108,13 +104,14 @@ namespace KSP_PLUGIN
             public float OxidizerS;
 
             //### MISC ###
-            public double MissionTime;
+            public float MissionTime;
+            public float UT;
             public UInt32 MNTime;
             public float MNDeltaV;
             public byte HasTarget;
             public float TargetDist;    //  Distance to targeted vessel (m)
             public float TargetV;       //  Target vessel relative velocity (m/s)
-            public byte SOINumber;      //  SOI Number (decimal format: sun-planet-moon e.g. 130 = kerbin, 131 = mun)
+            public NavHeading TargetRotation;
 
             public byte SASMode; //hold, prograde, retro, etc...
             public byte SpeedMode; //Surface, orbit target
@@ -202,5 +199,68 @@ namespace KSP_PLUGIN
             public float WheelThrottle;
             public float WheelSteer;
         }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public unsafe struct OrbitData
+        {
+            public byte SOINumber;
+            public double longOfAscNode;
+            public double argOfPE;
+            public double SemiLatusRectum;
+            public double e;
+            public float inc;
+            public double anomoly;
+            public double anomolyEnd;
+            public float AP;
+            public float PE;
+            public int T2Pe;
+            public int T2AN;
+            public int T2DN;
+            public int period;
+            public int T2PatchEnd;
+            public byte transStart;
+            public byte transEnd;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct ManData
+        {
+            public float DV;
+            public double UT;
+            public float X, Y, Z;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct ClosestAprouchData
+        {
+            public float ANAnom; //anomoly of ascending node between orbits
+            public float TargetANAnom;
+            public int T2AN;
+            public int T2DN;
+            public float RelInc; //relative inclonation
+            public float CAAnom; //anomoly of closest aprouch
+            public float TargetCAAnom;
+            public int T2CA; //closest aprouch
+            public int SepAtCA;
+        }
+
+        public struct RawOrbitPlanData
+        {
+            public List<OrbitData> CurrentOrbitPatches;
+            public int ManPatchNum;
+            public List<OrbitData> PlannedOrbitPatches;
+            public OrbitData TargetOrbit;
+            public string TargetName;
+            public List<ManData> Mans;
+            public ClosestAprouchData Rendezvous;
+        }
+
+        public struct ManChangePacket
+        {
+            public byte mode; //0=set //1=new //2=delete
+            public byte manID;
+            public double UT;
+            public float X, Y, Z;
+        };
     }
 }
