@@ -25,7 +25,22 @@ uint16_t checksum(uint8_t *buffer, int length) {
 
 void Client::SendControls() { //use async ?
 	Control.header.checksum = checksum((uint8_t*)&Control.ID, sizeof(Control) - sizeof(Header));
-	int	iResult = send(ConnectSocket, (char*)&Control, sizeof(Control), 0);
+	Send((char*)&Control, sizeof(Control));
+	Control.ID++;
+}
+
+void Client::SendManChange(uint8_t mode, uint8_t ID, float UT, vec3 vector) {
+	ManChangePacket.mode = mode;
+	ManChangePacket.manID = ID;
+	ManChangePacket.UT = UT;
+	ManChangePacket.X = vector.x;
+	ManChangePacket.Y = vector.y;
+	ManChangePacket.Z = vector.z;
+	Send((char*)&ManChangePacket, sizeof(ManChangePacket));
+}
+
+void Client::Send(char *buff, int length) {
+	int	iResult = send(ConnectSocket, buff, length, 0);
 	if (iResult == SOCKET_ERROR) {
 		int errorN = WSAGetLastError();
 		if (errorN != WSAEWOULDBLOCK) {
@@ -33,7 +48,6 @@ void Client::SendControls() { //use async ?
 			WSACleanup();
 		}
 	}
-	Control.ID++;
 }
 
 bool Client::ReadBytes(char *buffer, uint16_t *checkSum, int bytesToRead) {
@@ -64,12 +78,15 @@ bool Client::ReadBytes(char *buffer, uint16_t *checkSum, int bytesToRead) {
 }
 
 void Client::errBadPacket() {
+	printf("bad\n");
 	sprintf(error, "Malformed Packet");
 	state = TCP_FAILED;
 	Running = false;
 }
 
 void Client::Run(std::string IP, std::string PORT) {
+				printf("f2oasdasdo\n");
+asd
 #pragma region winsock stuff
 	WSADATA wsaData;
 	struct addrinfo *result = NULL,
@@ -142,39 +159,98 @@ void Client::Run(std::string IP, std::string PORT) {
 	Running = true;
 	StatusPacket sP;
 	VesselPacket vP;
+	char data[1024];
 
 	Header header;
 
 	uint16_t checksumCalced;
+			printf("f2ooo\n");
 
 	while (Running && state == TCP_CONNECTED) {
 		if (ReadBytes((char*)&header, 0, sizeof(header))) {
 			if (!memcmp(header.header, Header_Array, sizeof(Header_Array))) {
 				if (header.type == (char)1) {
-					if (ReadBytes((char*)&sP, &checksumCalced, sizeof(StatusPacket))) {
-						if (header.checksum == checksumCalced) {
-							if (sP.ID > Status.ID) {
-								memcpy(&Status, &sP, sizeof(StatusPacket));
+					if (header.length == sizeof(StatusPacket)) {
+						if (ReadBytes((char*)&sP, &checksumCalced, sizeof(StatusPacket))) {
+							if (header.checksum == checksumCalced) {
+								if (sP.ID > Status.ID) {
+									memcpy(&Status, &sP, sizeof(StatusPacket));
+									if (Status.YarkVersion != 0x03) {
+										printf("Bad version: %d\n", Status.YarkVersion);
+									}
+								}
 							}
 						}
 					}
+					else {
+						printf("f\n");
+						errBadPacket();
+					}
 				}
 				else if (header.type == (char)2) {
-					if (ReadBytes((char*)&vP, &checksumCalced, sizeof(VesselPacket))) {
-						if (header.checksum == checksumCalced) {
-							if (vP.ID >= Vessel.ID) {
-								memcpy(&Vessel, &vP, sizeof(VesselPacket));
+					if (header.length == sizeof(VesselPacket)) {
+						if (ReadBytes((char*)&vP, &checksumCalced, sizeof(VesselPacket))) {
+							if (header.checksum == checksumCalced) {
+								if (vP.ID >= Vessel.ID) {
+									memcpy(&Vessel, &vP, sizeof(VesselPacket));
+								}
 							}
+						}
+					}
+					else {
+												printf("f2\n");
+errBadPacket();
+					}
+				}
+				else if (header.type == (char)3) {
+					if (ReadBytes(data, &checksumCalced, header.length)) {
+						int offset = 0;
+
+						int numOrbits = data[offset]; offset++; //CurrentOrbitPatches
+						OrbitPlan.CurrentOrbitPatches.resize(numOrbits);
+						for (int i = 0; i < numOrbits; i++) {
+							memcpy(&OrbitPlan.CurrentOrbitPatches[i], data + offset, sizeof(OrbitData));
+							offset += sizeof(OrbitData);
+						}
+
+						OrbitPlan.ManPatchNum = data[offset]; offset++;
+
+						int numOrbitsPlanned = data[offset]; offset++; //PlannedOrbitPatches
+						OrbitPlan.PlannedOrbitPatches.resize(numOrbitsPlanned);
+						for (int i = 0; i < numOrbitsPlanned; i++) {
+							memcpy(&OrbitPlan.PlannedOrbitPatches[i], data + offset, sizeof(OrbitData));
+							offset += sizeof(OrbitData);
+						}
+						memcpy(&OrbitPlan.TargetOrbit, data + offset, sizeof(OrbitData)); //targetorbit
+						offset += sizeof(OrbitData);
+
+						//targetname
+						OrbitPlan.TargetName = std::string(data + offset + 1);
+						offset += data[offset] + 2;
+
+						memcpy(&OrbitPlan.CAD, data + offset, sizeof(OrbitPlan.CAD));
+						offset += sizeof(OrbitPlan.CAD);
+
+						int numMans = data[offset]; offset++;
+						OrbitPlan.Mans.resize(numMans);
+						for (int i = 0; i < numMans; i++) {
+							memcpy(&OrbitPlan.Mans[i], data + offset, sizeof(ManData));
+							offset += sizeof(ManData);
 						}
 					}
 				}
 				else {
-					errBadPacket();
+					printf("huh\n");
+					ReadBytes(data, &checksumCalced, header.length);
 				}
 			}
 			else {
-				errBadPacket();
+				//errBadPacket();
 			}
+		}
+		else {
+			printf("f2\n");
+			errBadPacket();
 		}
 	}
 
@@ -187,13 +263,15 @@ Client::Client()
 {
 	memset(error, 0, sizeof(error));
 	sprintf(error, "none");
-	memset((char*)&Control, 0, sizeof(Control));
-	memset((char*)&Vessel, 0, sizeof(Vessel));
-	memset((char*)&Status, 0, sizeof(Status));
+	memset((char*)&Control, 0, sizeof(ControlPacket));
+	memset((char*)&Vessel, 0, sizeof(VesselPacket));
+	memset((char*)&Status, 0, sizeof(StatusPacket));
 	memcpy(Control.header.header, Header_Array, 8);
 	Control.SASTol = 0.05f;
 	Control.header.type = 1;
 	Control.ID = 0;
+	memcpy(ManChangePacket.header.header, Header_Array, 8);
+	ManChangePacket.header.type = 2;
 }
 
 void Client::Connect(std::string IP, std::string PORT) {
