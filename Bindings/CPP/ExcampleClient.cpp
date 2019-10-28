@@ -17,14 +17,14 @@ void main() {
 		if (c->Status.inFlight) {//if there is a vessal in flight
 			switch (step) {
 			case 0:
-				if (c->Vessel.MissionTime > 0.5f & c->Vessel.CurrentStage != c->Vessel.TotalStage) { //if there was a staging, flight has started
+				if ((c->Vessel.MissionTime > 0.5f) && (c->Vessel.CurrentStage != c->Vessel.TotalStage)) { //if there was a staging, flight has started
 					printf(c->Status.vesselName);
 					printf(": Flight Started\n");
 					step = 1;
 				}
 				break;
 			case 1:
-				if (c->Vessel.Prograde.Pitch < 0.f && c->Vessel.Alt < 70000) { //if our prograde vector's pitch is negative (aka we are falling),
+				if ((c->Vessel.Prograde.Pitch < 0.f) && (c->Vessel.Alt < 70000)) { //if our prograde vector's pitch is negative (aka we are falling),
 																					   //and we are within the atmoshere, activate abort sequence
 					c->Control.SetMainControl(MC_ABORT, true); //stage abort
 					abortTime = c->Vessel.MissionTime; //record abort time
@@ -35,9 +35,9 @@ void main() {
 				}
 				break;
 			case 2:
-				if ((c->Vessel.MissionTime - abortTime) > 1 & c->Vessel.Alt < 10000) { //after two seconds...
+				if ((c->Vessel.MissionTime - abortTime) > 1 && (c->Vessel.Alt < 10000)) { //after two seconds...
 					printf("ABORTING SEQUENCE STEP 2\n");
-					c->Control.SetActionGroup(AG_1, true);
+					c->Control.SetActionGroup(AG_1, true); //presumable parachutes are bound to AG_1
 					c->SendControls(); //send control packet
 					step = 3;
 				}

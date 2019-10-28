@@ -111,7 +111,7 @@ namespace KSP_PLUGIN
                         }
                     }
                 }
-                catch (IOException e)
+                catch (IOException)
                 {
                     Debug.Log("Error Sending");
                     Connected = false;
@@ -158,7 +158,7 @@ namespace KSP_PLUGIN
                         MCPList.Enqueue(mcp);
                     }
                 }
-                catch (IOException e)
+                catch (IOException)
                 {
                     Debug.Log("Error Recieving");
                     Connected = false;

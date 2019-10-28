@@ -11,9 +11,9 @@
 #define TCP_CONNECTED 2
 #include <vector>
 
-struct vec3{
-	float x,y,z;
-}
+struct vec3 {
+	float x, y, z;
+};
 
 struct OrbitPlan {
 	std::vector<OrbitData> CurrentOrbitPatches;

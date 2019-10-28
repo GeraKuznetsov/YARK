@@ -78,15 +78,12 @@ bool Client::ReadBytes(char *buffer, uint16_t *checkSum, int bytesToRead) {
 }
 
 void Client::errBadPacket() {
-	printf("bad\n");
 	sprintf(error, "Malformed Packet");
 	state = TCP_FAILED;
 	Running = false;
 }
 
 void Client::Run(std::string IP, std::string PORT) {
-				printf("f2oasdasdo\n");
-asd
 #pragma region winsock stuff
 	WSADATA wsaData;
 	struct addrinfo *result = NULL,
@@ -164,7 +161,6 @@ asd
 	Header header;
 
 	uint16_t checksumCalced;
-			printf("f2ooo\n");
 
 	while (Running && state == TCP_CONNECTED) {
 		if (ReadBytes((char*)&header, 0, sizeof(header))) {
@@ -183,7 +179,6 @@ asd
 						}
 					}
 					else {
-						printf("f\n");
 						errBadPacket();
 					}
 				}
@@ -198,8 +193,7 @@ asd
 						}
 					}
 					else {
-												printf("f2\n");
-errBadPacket();
+						errBadPacket();
 					}
 				}
 				else if (header.type == (char)3) {
@@ -249,7 +243,6 @@ errBadPacket();
 			}
 		}
 		else {
-			printf("f2\n");
 			errBadPacket();
 		}
 	}
