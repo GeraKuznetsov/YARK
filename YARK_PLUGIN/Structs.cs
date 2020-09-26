@@ -255,6 +255,7 @@ namespace KSP_PLUGIN
             public ClosestAprouchData Rendezvous;
         }
 
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public struct ManChangePacket
         {
             public byte mode; //0=set //1=new //2=delete

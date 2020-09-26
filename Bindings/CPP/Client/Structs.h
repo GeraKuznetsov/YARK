@@ -1,4 +1,7 @@
 #pragma once
+
+#include <cmath>
+
 #pragma pack(push, 1)
 
 //defines for MainControls
@@ -165,12 +168,12 @@ struct ControlPacket
 			MainControls &= ~((uint8_t)control);
 		}
 	}
-	void  SetActionGroup(int group, bool s) {
+	void  SetActionGroup(uint16_t group, bool s) {
 		if (s) {
 			ActionGroups |= group;
 		}
 		else {
-			ActionGroups &= ~((uint8_t)group);
+			ActionGroups &= ~((uint16_t)group);
 		}
 	}
 };

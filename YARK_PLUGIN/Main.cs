@@ -387,13 +387,13 @@ namespace KSP_YARK
             east = Vector3d.Cross(up, north);
 
             rotationSurface = Quaternion.LookRotation(north, up);
-            
+
             Vector3d attitude = Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(AV.GetTransform().rotation) * rotationSurface).eulerAngles;
 
             VP.Roll = (float)((attitude.z > 180) ? (attitude.z - 360.0) : attitude.z);
             VP.Pitch = (float)((attitude.x > 180) ? (360.0 - attitude.x) : -attitude.x);
             VP.Heading = (float)attitude.y;
-            
+
             Vector3d prograde = new Vector3d(0, 0, 0);
             switch (FlightGlobals.speedDisplayMode)
             {
@@ -418,7 +418,7 @@ namespace KSP_YARK
                 VP.TargetDist = (float)Vector3.Distance(t.GetTransform().position, AV.transform.position);
                 VP.TargetV = (float)FlightGlobals.ship_tgtVelocity.magnitude;
 
-                if(t is Vessel)
+                if (t is Vessel)
                 {
                     attitude = Quaternion.Inverse(Quaternion.Euler(90, 0, 0) * Quaternion.Inverse(t.GetVessel().GetTransform().rotation) * rotationSurface).eulerAngles;
                     VP.TargetRotation.Pitch = (float)((attitude.x > 180) ? (360.0 - attitude.x) : -attitude.x);
@@ -574,10 +574,10 @@ namespace KSP_YARK
             //set navball mode
             if (VC.SpeedMode != VCOld.SpeedMode)
             {
-                if (!((VC.SpeedMode == 0) || ((VC.SpeedMode == 3) && HasTarget())))
-                {
-                    FlightGlobals.SetSpeedMode((FlightGlobals.SpeedDisplayModes)(VC.SpeedMode - 1));
-                }
+                //  if (!((VC.SpeedMode == 0) || ((VC.SpeedMode == 3) && HasTarget())))
+                // {
+                FlightGlobals.SetSpeedMode((FlightGlobals.SpeedDisplayModes)(VC.SpeedMode - 1));
+                // }
             }
 
             if (!float.IsNaN(VC.targetHeading) && !float.IsNaN(VC.targetPitch) && !float.IsNaN(VC.targetRoll))

@@ -19,7 +19,7 @@ namespace KSP_YARK
             cfg.load();
             TCPPort = cfg.GetValue<int>("TCPPort", 9999);
             UpdatesPerSecond = cfg.GetValue<int>("UpdatesPerSecond", 0);
-            OrbitPlanSkipRate = cfg.GetValue<int>("UpdatesPerSecond", 1);
+            OrbitPlanSkipRate = cfg.GetValue<int>("OrbitPlanSkipRate", 1);
         }
 
         public void OnDisable()

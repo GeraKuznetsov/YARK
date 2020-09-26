@@ -15,7 +15,6 @@ namespace KSP_PLUGIN
             SupressSAS = false;
             if (Main.conn == null) return;
             AxisControls ac = Main.conn.GetAxisControls();
-
             switch (ac.ThrottleMode)
             {
                 case 1:
