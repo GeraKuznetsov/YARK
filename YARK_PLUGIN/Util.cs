@@ -8,6 +8,7 @@ namespace KSP_PLUGIN
 {
     class Util
     {
+
         public static AxisControls CPToAC(ControlPacket cp)
         {
             AxisControls ac = new AxisControls
@@ -55,7 +56,7 @@ namespace KSP_PLUGIN
 
                 timeWarpRateIndex = cp.timeWarpRateIndex,
 
-                ActionGroups = new Boolean[10]
+                ActionGroups = new Boolean[10],
             };
 
             for (int j = 0; j < 10; j++)
@@ -361,3 +362,4 @@ namespace KSP_PLUGIN
         }
     }
 }
+

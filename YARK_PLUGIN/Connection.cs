@@ -123,10 +123,12 @@ namespace KSP_PLUGIN
         {
             byte[] recv = new byte[bytesToRead];
             int bytesRead = 0;
+           // Debug.Log("want to read: " + bytesToRead);
             while (bytesRead < bytesToRead)
             {
-                bytesRead = ns.Read(recv, bytesRead, bytesToRead - bytesRead);
+                bytesRead += ns.Read(recv, bytesRead, bytesToRead - bytesRead);
             }
+           // Debug.Log("read...");
             return recv;
         }
 
@@ -135,6 +137,7 @@ namespace KSP_PLUGIN
             IntPtr ptr = Marshal.AllocHGlobal(256);
             while (Connected)
             {
+               // Debug.Log("recieving");
                 try
                 {
                     Marshal.Copy(ReadBytes(Marshal.SizeOf(typeof(Header))), 0, ptr, Marshal.SizeOf(typeof(Header)));
@@ -156,6 +159,10 @@ namespace KSP_PLUGIN
                         Marshal.Copy(ReadBytes(Marshal.SizeOf(typeof(ManChangePacket))), 0, ptr, Marshal.SizeOf(typeof(ManChangePacket)));
                         ManChangePacket mcp = (ManChangePacket)Marshal.PtrToStructure(ptr, typeof(ManChangePacket));
                         MCPList.Enqueue(mcp);
+                    }
+                    else
+                    {
+                        Debug.Log("Incorrect header");
                     }
                 }
                 catch (IOException)

@@ -9,10 +9,8 @@ namespace KSP_PLUGIN
     {
         public static bool holdTargetVector = false; //static used by main
         public static float targetHeading, targetRoll, targetPitch;
-        public static bool SupressSAS;
         public static void Callback(FlightCtrlState s)
         {
-            SupressSAS = false;
             if (Main.conn == null) return;
             AxisControls ac = Main.conn.GetAxisControls();
             switch (ac.ThrottleMode)
@@ -30,8 +28,9 @@ namespace KSP_PLUGIN
                     break;
             }
 
-            if (true || !holdTargetVector)
-            {
+            if (Math.Abs(ac.Pitch) < ac.SASTol) { ac.Pitch = s.pitch; } 
+            if (Math.Abs(ac.Roll) < ac.SASTol) { ac.Roll = s.roll; }
+            if (Math.Abs(ac.Yaw) < ac.SASTol) { ac.Yaw = s.yaw; }
                 switch (ac.RotMode)
                 {
                     case 1:
@@ -52,11 +51,6 @@ namespace KSP_PLUGIN
                     default:
                         break;
                 }
-                if (ac.RotMode != 0)
-                {
-                    SupressSAS = (Math.Abs(ac.Pitch) > ac.SASTol || Math.Abs(ac.Roll) > ac.SASTol || Math.Abs(ac.Yaw) > ac.SASTol);
-                }
-            }
 
             switch (ac.TransMode)
             {

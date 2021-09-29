@@ -31,8 +31,6 @@ namespace KSP_YARK
         IOResource TempR;
 
         private Vector3d CoM, north, up, east;
-        private Boolean wasSASOn = false, forceSASMode = false;
-        private int lastSASMode = 1;
         private float TimeOFLastSend;
         private UInt32 currentTime, lastTime; //Checking for revert / save backwards in time
         public static int OrbitPlanSkipRateC;
@@ -96,30 +94,6 @@ namespace KSP_YARK
                             conn.SendStatusPacket(SP);
                         }
                         lastTime = currentTime;
-                        if (forceSASMode)
-                        {
-                            forceSASMode = false;
-                            SetSASMode(lastSASMode);
-                        }
-
-                        if (AxisInput.SupressSAS) // SAS suspention for joystick input
-                        {
-                            if ((AV.ActionGroups[KSPActionGroup.SAS]) && (wasSASOn == false))
-                            {
-                                wasSASOn = true;
-                                lastSASMode = GetSASMode(false);
-                                AV.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
-                            }
-                        }
-                        else
-                        {
-                            if (wasSASOn == true)
-                            {
-                                wasSASOn = false;
-                                AV.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
-                                forceSASMode = true;
-                            }
-                        }
 
                         if (AxisInput.holdTargetVector) //custom SAS vectoring WIP
                         {
